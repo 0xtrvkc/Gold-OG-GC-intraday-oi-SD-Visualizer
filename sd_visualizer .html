@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Standard Deviation Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #000000;
+  --fg:         #ffffff;
+  --input-bg:   #111111;
+  --border-col: #ffffff;
+  --zone1-fill: rgba(220, 38,  38,  0.08);
+  --zone2-fill: rgba(234, 130, 18,  0.08);
+  --zone3-fill: rgba(234, 212, 18,  0.08);
+  --zone1-line: #ff4444;
+  --zone2-line: #ff9900;
+  --zone3-line: #ffdd00;
+  --call-fill:  rgba(59, 130, 246, 0.75);
+  --call-line:  #60a5fa;
+  --put-fill:   rgba(250, 204, 21, 0.75);
+  --put-line:   #facc15;
+  --vol-line:   #a78bfa;
+  --font:       'Courier Prime', 'Courier New', monospace;
+  --border:     1px solid var(--border-col);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); min-height: 100vh; padding: 52px 32px; }
+.container { max-width: 1118px; margin: 0 auto; }
+
+/* HEADER */
+header {
+  border-bottom: 2px solid var(--fg);
+  padding-bottom: 16px; margin-bottom: 28px;
+  display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;
+}
+header h1 { font-size: 1.43rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+header p  { font-size: 0.975rem; color: #888; margin-top: 5px; letter-spacing: 0.04em; }
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.status-row { display: flex; align-items: center; gap: 10px; font-size: 0.845rem; color: #888; letter-spacing: 0.04em; }
+.pulse { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; animation: blink 1.4s ease-in-out infinite; }
+.pulse.stale { background: #555; animation: none; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+.btn-refresh {
+  font-family: var(--font); font-size: 0.845rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 6px 16px; border: var(--border); background: #111;
+  color: #fff; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-refresh:hover { background: #222; }
+.btn-refresh:active { background: #333; }
+.countdown { font-size: 0.78rem; color: #555; letter-spacing: 0.06em; }
+
+/* INPUT PANEL */
+.input-panel { display: flex; gap: 32px; margin-bottom: 28px; flex-wrap: wrap; align-items: flex-end; }
+.input-group { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 180px; }
+.input-group label { font-size: 0.91rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.input-group small { font-size: 0.845rem; color: #888; letter-spacing: 0.04em; margin-top: -3px; }
+input[type="number"], select {
+  font-family: var(--font); font-size: 1.2rem; padding: 10px 13px;
+  border: var(--border); background: var(--input-bg); color: var(--fg);
+  outline: none; width: 100%; border-radius: 0; -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+input[type="number"]:focus, select:focus { border-color: #fff; box-shadow: 2px 2px 0 #fff; }
+select { cursor: pointer; font-size: 0.91rem; padding: 10px 13px; }
+
+/* STATS BAR */
+.stats-bar { display: flex; gap: 0; border: var(--border); margin-bottom: 28px; font-size: 0.884rem; letter-spacing: 0.04em; flex-wrap: wrap; }
+.stat-cell { flex: 1; padding: 10px 16px; border-right: var(--border); min-width: 100px; }
+.stat-cell:last-child { border-right: none; }
+.stat-cell .label { color: #888; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.08em; }
+.stat-cell .value { font-weight: 700; font-size: 1.05rem; margin-top: 3px; }
+.stat-cell.z1   .value { color: var(--zone1-line); }
+.stat-cell.z2   .value { color: var(--zone2-line); }
+.stat-cell.z3   .value { color: var(--zone3-line); }
+.stat-cell.zmean .value { color: #fff; }
+.stat-cell.scall .value { color: var(--call-line); }
+.stat-cell.sput  .value { color: var(--put-line); }
+.stat-cell.svol  .value { color: #aaa; }
+
+/* CHART */
+.chart-wrapper { border: var(--border); background: #000; padding: 0; margin-bottom: 0; overflow: hidden; position: relative; }
+svg#chart { display: block; width: 100%; height: 442px; cursor: grab; }
+
+/* TOOLTIP */
+#tooltip {
+  position: fixed; pointer-events: none; display: none;
+  background: #111; border: 1px solid #fff;
+  padding: 8px 14px; font-family: var(--font); font-size: 0.845rem;
+  letter-spacing: 0.04em; z-index: 100; white-space: nowrap;
+  line-height: 1.6;
+}
+#tooltip .tt-strike { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
+#tooltip .tt-call   { color: var(--call-line); }
+#tooltip .tt-put    { color: var(--put-line); }
+#tooltip .tt-vol    { color: var(--vol-line); }
+
+/* X-AXIS */
+.x-axis-labels {
+  border: var(--border); border-top: none; background: #000;
+  padding: 8px 0 10px 0;
+  position: relative; height: 42px;
+  margin-bottom: 28px;
+  overflow: hidden;
+}
+.x-tick { text-align: center; font-size: 0.78rem; font-family: var(--font); color: #888; letter-spacing: 0.02em; line-height: 1.3; white-space: nowrap; }
+.x-tick.is-mean { font-weight: 700; color: #fff; }
+.x-tick.is-1sd  { color: var(--zone1-line); font-weight: 700; }
+.x-tick.is-2sd  { color: var(--zone2-line); font-weight: 700; }
+.x-tick.is-3sd  { color: var(--zone3-line); font-weight: 700; }
+.x-tick .sub    { display: block; font-size: 0.715rem; color: #666; }
+.x-tick.is-1sd .sub { color: var(--zone1-line); }
+.x-tick.is-2sd .sub { color: var(--zone2-line); }
+.x-tick.is-3sd .sub { color: var(--zone3-line); }
+
+/* LEGEND */
+.legend { display: flex; gap: 0; border: var(--border); font-size: 0.884rem; margin-bottom: 10px; }
+.legend-item { flex: 1; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-right: var(--border); }
+.legend-item:last-child { border-right: none; }
+.legend-swatch { width: 18px; height: 18px; border: 1px solid #555; flex-shrink: 0; }
+.legend-line { width: 24px; height: 3px; flex-shrink: 0; }
+.legend-text .pct  { font-weight: 700; }
+.legend-text .desc { color: #888; font-size: 0.78rem; display: block; }
+
+/* ERROR */
+.err-banner { display: none; background: #1a0000; border: 1px solid #f87171; color: #f87171; padding: 10px 16px; font-size: 0.845rem; margin-bottom: 20px; letter-spacing: 0.04em; }
+
+footer { font-size: 0.78rem; color: #555; border-top: 1px solid #333; padding-top: 13px; letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div>
+      <h1 id="h-title">Standard Deviation Visualizer</h1>
+      <p id="h-sub">Normal distribution · Bell curve · ±3σ zones · Intraday volume overlay</p>
+    </div>
+    <div class="header-right">
+      <div class="status-row">
+        <div class="pulse" id="pulse-dot"></div>
+        <span id="status-txt">Loading…</span>
+        <button class="btn-refresh" id="btn-refresh">↺ Refresh</button>
+      </div>
+      <div class="countdown" id="countdown">Next refresh in —</div>
+    </div>
+  </header>
+
+  <div class="err-banner" id="err-banner"></div>
+
+  <div class="input-panel">
+    <div class="input-group">
+      <label for="inp-mean">Mean (μ)</label>
+      <small id="mean-lbl">Auto = Future price · type to override</small>
+      <input type="number" id="inp-mean" value="" placeholder="loading…" step="1">
+      <button id="btn-mean-reset" style="font-family:var(--font);font-size:0.75rem;padding:4px 10px;border:1px solid #444;background:#000;color:#666;cursor:pointer;letter-spacing:0.06em;display:none;" onclick="resetMean()">↺ reset to future</button>
+    </div>
+    <div class="input-group">
+      <label for="inp-sd">Std Dev (σ)</label>
+      <small id="sd-formula-lbl">IV × Mean × √(DTE/252)</small>
+      <input type="number" id="inp-sd" value="50" placeholder="auto" step="0.1" min="0.1">
+    </div>
+    <div class="input-group">
+      <label for="sel-interval">Auto-Refresh</label>
+      <small>Fetch interval</small>
+      <select id="sel-interval">
+        <option value="10000">10 s</option>
+        <option value="30000" selected>30 s</option>
+        <option value="60000">60 s</option>
+        <option value="300000">5 min</option>
+      </select>
+    </div>
+    <div class="input-group" style="min-width:260px;flex:2;">
+      <label for="inp-vol-price">Price — Vol Zone</label>
+      <small>Starts at future price · snaps to 00/25/50/75</small>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="range" id="inp-vol-price"
+          min="0" max="9999" step="5"
+          value="0"
+          style="flex:1;accent-color:#ef4444;cursor:pointer;height:4px;">
+        <span id="vol-price-display" style="font-family:var(--font);font-size:1rem;font-weight:700;color:#ef4444;min-width:48px;text-align:right;">—</span>
+      </div>
+    </div>
+    <div class="input-group">
+      <label for="inp-vol-val">Vol at Price (%)</label>
+      <small>Auto from smile · edit to override</small>
+      <input type="number" id="inp-vol-val" value="" placeholder="auto" step="0.01" min="0">
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-cell z3"><div class="label">μ − 3σ</div><div class="value" id="val-m3">—</div></div>
+    <div class="stat-cell z2"><div class="label">μ − 2σ</div><div class="value" id="val-m2">—</div></div>
+    <div class="stat-cell z1"><div class="label">μ − 1σ</div><div class="value" id="val-m1">—</div></div>
+    <div class="stat-cell zmean"><div class="label">μ (Mean)</div><div class="value" id="val-mean">—</div></div>
+    <div class="stat-cell z1"><div class="label">μ + 1σ</div><div class="value" id="val-p1">—</div></div>
+    <div class="stat-cell z2"><div class="label">μ + 2σ</div><div class="value" id="val-p2">—</div></div>
+    <div class="stat-cell z3"><div class="label">μ + 3σ</div><div class="value" id="val-p3">—</div></div>
+    <div class="stat-cell scall"><div class="label">Total Calls</div><div class="value" id="val-calls">—</div></div>
+    <div class="stat-cell sput"><div class="label">Total Puts</div><div class="value" id="val-puts">—</div></div>
+    <div class="stat-cell svol"><div class="label">IV / Fut Chg</div><div class="value" id="val-vol">—</div></div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-family:var(--font);font-size:0.8rem;letter-spacing:0.06em;">
+    <span style="color:#555;text-transform:uppercase;">Zoom</span>
+    <button onclick="adjustZoom(2)"   style="font-family:var(--font);padding:3px 10px;border:1px solid #444;background:#000;color:#fff;cursor:pointer;font-size:0.85rem;">+</button>
+    <button onclick="adjustZoom(0.5)" style="font-family:var(--font);padding:3px 10px;border:1px solid #444;background:#000;color:#fff;cursor:pointer;font-size:0.85rem;">−</button>
+    <button onclick="resetZoom()"     style="font-family:var(--font);padding:3px 10px;border:1px solid #444;background:#000;color:#666;cursor:pointer;font-size:0.85rem;">Reset</button>
+    <span id="zoom-label" style="color:#555;">1×</span>
+    <span style="color:#333;margin-left:8px;">· Scroll to zoom · Drag to pan</span>
+  </div>
+
+  <div class="chart-wrapper">
+    <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <g id="g-grid"></g>
+      <g id="g-zones"></g>
+      <g id="g-volzone"></g>
+      <g id="g-futurezone"></g>
+      <g id="g-dotgrid"></g>
+      <g id="g-future"></g>
+      <g id="g-bars"></g>
+      <g id="g-oibars"></g>
+      <g id="g-volcurve"></g>
+      <g id="g-curve"></g>
+      <g id="g-markers"></g>
+      <g id="g-arrow"></g>
+      <g id="g-hitzones"></g>
+    </svg>
+  </div>
+
+  <div class="x-axis-labels" id="x-axis-labels"></div>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:var(--call-fill);border-color:var(--call-line)"></div>
+      <div class="legend-text"><span class="pct" style="color:var(--call-line)">Calls</span><span class="desc">Call volume per strike</span></div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:var(--put-fill);border-color:var(--put-line)"></div>
+      <div class="legend-text"><span class="pct" style="color:var(--put-line)">Puts</span><span class="desc">Put volume per strike</span></div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:transparent;border:2px solid #ff0000;"></div>
+      <div class="legend-text"><span class="pct" style="color:#ff0000">OI Puts</span><span class="desc">Open interest puts (hollow)</span></div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:transparent;border:2px solid hwb(109 0% 0%);"></div>
+      <div class="legend-text"><span class="pct" style="color:oklch(87.085% 0.28876 141.378)">OI Calls</span><span class="desc">Open interest calls (hollow)</span></div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-line" style="background:#3b82f6;height:2px;border-top:2px dashed #3b82f6;background:none;"></div>
+      <div class="legend-text"><span class="pct" style="color:#3b82f6">Future</span><span class="desc">Future price from data</span></div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.5);"></div>
+      <div class="legend-text"><span class="pct" style="color:#ef4444">Vol Zone</span><span class="desc">±σ at your price &amp; vol</span></div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-line" style="background:var(--vol-line)"></div>
+      <div class="legend-text"><span class="pct" style="color:var(--vol-line)">Vol Settle</span><span class="desc">Implied volatility curve</span></div>
+    </div>
+  </div>
+
+  <footer id="footer-txt">
+    Normal distribution · empirical rule (68–95–99.7) · x-axis spans μ±200 · minor ticks every 5 · major grid every 25 · Vol2Vol live data
+  </footer>
+</div>
+
+<!-- TOOLTIP -->
+<div id="tooltip">
+  <div class="tt-strike" id="tt-strike"></div>
+  <div class="tt-call"   id="tt-call"></div>
+  <div class="tt-put"    id="tt-put"></div>
+  <div class="tt-vol"    id="tt-vol"></div>
+</div>
+
+<script>
+/* ================================================================
+   CONFIG
+================================================================ */
+const CONFIG = {
+  SVG_W: 800, SVG_H: 300,
+  PAD_LEFT: 16, PAD_RIGHT: 16, PAD_TOP: 24, PAD_BOTTOM: 40,
+  X_HALF: 200, TICK_COUNT: 17, CURVE_PTS: 300,
+  DOT_STEP: 5, DOT_MAJOR: 25,
+  BAR_MAX_FRAC: 0.42,
+  ZONES: [
+    { mult: 3, fill: 'rgba(234,212,18,0.08)', line: '#ffdd00' },
+    { mult: 2, fill: 'rgba(234,130,18,0.08)', line: '#ff9900' },
+    { mult: 1, fill: 'rgba(220,38, 38,0.08)', line: '#ff4444' },
+  ],
+};
+const DATA_URL = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/IntradayData.txt';
+const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIData.txt';
+
+/* ================================================================
+   STATE
+================================================================ */
+let state = { mean: 4500, sd: 50, zoom: 1.0, panOffset: 0 };
+let computedSd = null;  // null = not yet computed
+let liveData   = null;
+let oiData     = null;
+let refreshTimer = null;
+let countdownTimer = null;
+let countdownSec   = 0;
+
+/* ================================================================
+   MATH
+================================================================ */
+const Math_ = {
+  normalPDF(x, mu, s) { const z=(x-mu)/s; return Math.exp(-0.5*z*z)/(s*Math.sqrt(2*Math.PI)); },
+  scale(v, d0, d1, r0, r1) { return r0 + (v-d0)/(d1-d0)*(r1-r0); },
+};
+
+/* ================================================================
+   COORDS
+   xMin/xMax always snap to the nearest 25-multiple so the grid
+   labels stay on 00/25/50/75 regardless of what mean the user typed.
+   The bell curve and zones still centre on the actual mean.
+================================================================ */
+function makeCoords(mean, sd) {
+  const halfRange = CONFIG.X_HALF / state.zoom;
+  const centre    = mean + state.panOffset;
+  const rawMin    = centre - halfRange;
+  const rawMax    = centre + halfRange;
+  const xMin = Math.floor(rawMin / 25) * 25;
+  const xMax = Math.ceil (rawMax / 25) * 25;
+  const plotL=CONFIG.PAD_LEFT, plotR=CONFIG.SVG_W-CONFIG.PAD_RIGHT;
+  const plotT=CONFIG.PAD_TOP,  plotB=CONFIG.SVG_H-CONFIG.PAD_BOTTOM;
+  const peakPDF = Math_.normalPDF(mean,mean,sd);
+  return {
+    xMin, xMax, plotL, plotR, plotT, plotB, peakPDF,
+    toSvgX: x  => Math_.scale(x,   xMin, xMax, plotL, plotR),
+    toSvgY: pdf=> Math_.scale(pdf,  0, peakPDF, plotB, plotT),
+  };
+}
+
+/* ================================================================
+   SVG HELPERS
+================================================================ */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs={}) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+  return e;
+}
+function clearGroup(id) {
+  const g = document.getElementById(id);
+  if (!g) { console.error('Missing SVG group:', id); return { appendChild:()=>{} }; }
+  while (g.firstChild) g.removeChild(g.firstChild);
+  return g;
+}
+
+/* ================================================================
+   PARSE
+================================================================ */
+function parseIntraday(text) {
+  const lines = text.trim().split('\n').map(l=>l.trim()).filter(Boolean);
+  const title  = lines[0];
+  const futM   = title.match(/vs\s+([\d.]+)\s*\(([-+]?[\d.]+)\)/);
+  const dteM   = title.match(/\(([\d.]+)\s*DTE\)/);
+  const meta   = lines[1]||'';
+  const callM  = meta.match(/Call:\s*([\d,]+)/);
+  const putM   = meta.match(/Put:\s*([\d,]+)/);
+  const volM   = meta.match(/Vol:\s*([\d.]+)/);
+  const hi     = lines.findIndex(l=>l.startsWith('Strike,'));
+  const rows   = [];
+  if (hi>=0) {
+    for (let i=hi+1;i<lines.length;i++) {
+      const p=lines[i].split(',');
+      if (p.length<4) continue;
+      const strike=parseFloat(p[0]),call=parseFloat(p[1]),put=parseFloat(p[2]),vol=parseFloat(p[3]);
+      if (!isNaN(strike)) rows.push({strike,call:call||0,put:put||0,vol:isNaN(vol)?null:vol});
+    }
+  }
+  return {
+    future:    futM ? parseFloat(futM[1]) : null,
+    futChg:    futM ? futM[2] : '—',
+    dte:       dteM ? dteM[1] : '—',
+    callTotal: callM ? callM[1] : '—',
+    putTotal:  putM  ? putM[1]  : '—',
+    vol:       volM  ? volM[1]  : '—',
+    title:     title.split(' - ')[0]||title,
+    rows,
+  };
+}
+
+/* ================================================================
+   DRAW GRID
+================================================================ */
+function drawGrid(c) {
+  const g = clearGroup('g-grid');
+  g.appendChild(svgEl('line',{x1:c.plotL,y1:c.plotB,x2:c.plotR,y2:c.plotB,stroke:'#fff','stroke-width':'1.5'}));
+  for (const h of [0.25,0.5,0.75]) {
+    const sy = Math_.scale(h,0,1,c.plotB,c.plotT);
+    g.appendChild(svgEl('line',{x1:c.plotL,y1:sy,x2:c.plotR,y2:sy,stroke:'#333','stroke-width':'0.5','stroke-dasharray':'3,4'}));
+  }
+}
+
+/* ================================================================
+   DRAW ZONES — very transparent fills, colored boundary lines only
+================================================================ */
+function drawZones(c, mean, sd) {
+  const g = clearGroup('g-zones');
+  for (const zone of CONFIG.ZONES) {
+    const xL=mean-zone.mult*sd, xR=mean+zone.mult*sd;
+    const steps=120, dx=(xR-xL)/steps;
+    let d='';
+    for (let i=0;i<=steps;i++) {
+      const x=xL+i*dx, pdf=Math_.normalPDF(x,mean,sd);
+      d += (i===0?`M ${c.toSvgX(x)} ${c.toSvgY(pdf)}`:`L ${c.toSvgX(x)} ${c.toSvgY(pdf)} `);
+    }
+    d += `L ${c.toSvgX(xR)} ${c.plotB} L ${c.toSvgX(xL)} ${c.plotB} Z`;
+    g.appendChild(svgEl('path',{d,fill:'none',stroke:'none'}));
+  }
+}
+
+/* ================================================================
+   DRAW DOT GRID
+================================================================ */
+function drawDotGrid(c, mean, sd) {
+  const g=clearGroup('g-dotgrid');
+  const step=CONFIG.DOT_STEP;
+  const firstX=Math.ceil(c.xMin/step)*step;
+  const offset=(c.plotB-c.plotT)%12;
+  for (let x=firstX;x<=c.xMax+0.001;x+=step) {
+    const sx=c.toSvgX(x);
+    const isMajor=Math.abs(Math.round(x/CONFIG.DOT_MAJOR)*CONFIG.DOT_MAJOR-x)<0.001;
+    const sf=Math.round(Math.abs(x-mean)/sd*100)/100;
+    if (isMajor) {
+      let col='#ffffff';
+      if (Math.abs(sf-1)<0.02) col=CONFIG.ZONES[2].line;
+      else if (Math.abs(sf-2)<0.02) col=CONFIG.ZONES[1].line;
+      else if (Math.abs(sf-3)<0.02) col=CONFIG.ZONES[0].line;
+      g.appendChild(svgEl('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:col,'stroke-width':'0.5','stroke-dasharray':'1,1','stroke-dashoffset':String(offset)}));
+    } else {
+      g.appendChild(svgEl('line',{x1:sx,y1:c.plotB-8,x2:sx,y2:c.plotB,stroke:'#444','stroke-width':'1'}));
+    }
+  }
+}
+
+/* ================================================================
+   DRAW FUTURE ZONE + LINE
+   Blue transparent ±1σ zone around future price (σ computed from IV+DTE).
+   Blue dashed vertical line at exact future price.
+================================================================ */
+function drawFutureLine(c) {
+  const gLine = clearGroup('g-future');
+  const gZone = clearGroup('g-futurezone');
+  if (!liveData || liveData.future == null) return;
+
+  const fx  = liveData.future;
+  const dte = parseFloat(liveData.dte);
+
+  // Get smile-interpolated IV at the future price (same method as red vol zone)
+  let iv = NaN;
+  if (liveData.rows) {
+    const rows = liveData.rows.filter(r => r.vol != null && r.vol > 0);
+    const below = rows.filter(r => r.strike <= fx).slice(-1)[0];
+    const above = rows.filter(r => r.strike >= fx)[0];
+    if (below && above) {
+      const t = below.strike === above.strike ? 0
+        : (fx - below.strike) / (above.strike - below.strike);
+      iv = (below.vol + t * (above.vol - below.vol)) * 100;
+    }
+  }
+  // Fallback to headline IV if future is outside smile range
+  if (isNaN(iv)) iv = parseFloat(liveData.vol);
+
+  // Blue SD zone (±1σ around future, using future's own IV/DTE)
+  if (!isNaN(iv) && !isNaN(dte) && dte > 0 && iv > 0) {
+    const futureSd = fx * (iv / 100) * Math.sqrt(dte / 252);
+    const zL = Math.max(fx - futureSd, c.xMin);
+    const zR = Math.min(fx + futureSd, c.xMax);
+    if (zR > zL) {
+      gZone.appendChild(svgEl('rect', {
+        x: c.toSvgX(zL), y: c.plotT,
+        width:  c.toSvgX(zR) - c.toSvgX(zL),
+        height: c.plotB - c.plotT,
+        fill: 'rgba(59,130,246,0.10)', stroke: 'none',
+      }));
+      gZone.appendChild(svgEl('line',{x1:c.toSvgX(zL),y1:c.plotT,x2:c.toSvgX(zL),y2:c.plotB,stroke:'rgba(59,130,246,0.30)','stroke-width':'0.75','stroke-dasharray':'3,3'}));
+      gZone.appendChild(svgEl('line',{x1:c.toSvgX(zR),y1:c.plotT,x2:c.toSvgX(zR),y2:c.plotB,stroke:'rgba(59,130,246,0.30)','stroke-width':'0.75','stroke-dasharray':'3,3'}));
+      // ±σ width labels
+      const sig = Math.round(futureSd);
+      gLine.appendChild(Object.assign(svgEl('text', {
+        x: c.toSvgX(fx - futureSd), y: c.plotT + 14,
+        'text-anchor': 'middle', 'font-size': '9', 'font-weight': 'bold',
+        'font-family': 'Courier Prime,Courier New,monospace', fill: '#60a5fa',
+      }), { textContent: '−' + sig }));
+      gLine.appendChild(Object.assign(svgEl('text', {
+        x: c.toSvgX(fx + futureSd), y: c.plotT + 14,
+        'text-anchor': 'middle', 'font-size': '9', 'font-weight': 'bold',
+        'font-family': 'Courier Prime,Courier New,monospace', fill: '#60a5fa',
+      }), { textContent: '+' + sig }));
+    }
+  }
+
+  // Blue dashed centre line
+  if (fx >= c.xMin && fx <= c.xMax) {
+    const sx = c.toSvgX(fx);
+    gLine.appendChild(svgEl('line',{
+      x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,
+      stroke:'#3b82f6','stroke-width':'1.5','stroke-dasharray':'5,4',
+    }));
+    const t = svgEl('text',{
+      x:sx+4,y:c.plotT+10,
+      'font-size':'8','font-family':'Courier Prime,Courier New,monospace',
+      fill:'#3b82f6','font-weight':'bold',
+    });
+    t.textContent = fx.toLocaleString();
+    gLine.appendChild(t);
+  }
+}
+
+
+/* ================================================================
+   DRAW VOL ZONE — red transparent ±1σ zone around a user-specified price
+   σ = price × (vol% / 100) × √(DTE/252)
+   Uses the same DTE as the live data.
+================================================================ */
+function drawVolZone(c) {
+  const g = clearGroup('g-volzone');
+  const displayText = document.getElementById('vol-price-display').textContent;
+  const price  = parseFloat(displayText.replace(/,/g, ''));
+  const volPct = parseFloat(document.getElementById('inp-vol-val').value);
+  if (isNaN(price) || price <= 0 || displayText === '—') return;
+
+  // Always draw the centre line if price is on screen
+  const sxP = c.toSvgX(Math.max(Math.min(price, c.xMax), c.xMin));
+  if (price >= c.xMin && price <= c.xMax) {
+    g.appendChild(svgEl('line',{x1:sxP,y1:c.plotT,x2:sxP,y2:c.plotB,
+      stroke:'#ef4444','stroke-width':'1.5','stroke-dasharray':'5,4'}));
+    const t = svgEl('text',{x:sxP+4,y:c.plotT+22,
+      'font-size':'8','font-family':'Courier Prime,Courier New,monospace',
+      fill:'#ef4444','font-weight':'bold'});
+    t.textContent = isNaN(volPct) || volPct <= 0
+      ? price.toLocaleString() + ' (no IV)'
+      : price.toLocaleString() + ' (' + volPct + '%)';
+    g.appendChild(t);
+  }
+
+  // Zone fill + edges only when we have valid vol
+  if (isNaN(volPct) || volPct <= 0) return;
+
+  const dte    = liveData ? parseFloat(liveData.dte) : NaN;
+  const dteVal = (!isNaN(dte) && dte > 0) ? dte : 1;
+  const sigma  = price * (volPct / 100) * Math.sqrt(dteVal / 252);
+  const zL = price - sigma, zR = price + sigma;
+  if (zR < c.xMin || zL > c.xMax) return;
+
+  const dL = Math.max(zL, c.xMin), dR = Math.min(zR, c.xMax);
+  const sxL = c.toSvgX(dL), sxR = c.toSvgX(dR);
+
+  g.appendChild(svgEl('rect',{
+    x: sxL, y: c.plotT,
+    width: Math.max(sxR - sxL, 1), height: c.plotB - c.plotT,
+    fill: 'rgba(239,68,68,0.12)', stroke: 'none',
+  }));
+  if (dL > c.xMin)
+    g.appendChild(svgEl('line',{x1:sxL,y1:c.plotT,x2:sxL,y2:c.plotB,
+      stroke:'rgba(239,68,68,0.5)','stroke-width':'1','stroke-dasharray':'3,3'}));
+  if (dR < c.xMax)
+    g.appendChild(svgEl('line',{x1:sxR,y1:c.plotT,x2:sxR,y2:c.plotB,
+      stroke:'rgba(239,68,68,0.5)','stroke-width':'1','stroke-dasharray':'3,3'}));
+
+  // ±σ edge labels
+  for (const [sx, lbl] of [[sxL,'−'+Math.round(sigma)],[sxR,'+'+Math.round(sigma)]]) {
+    const lt = svgEl('text',{x:sx,y:c.plotT+10,'text-anchor':'middle',
+      'font-size':'7','font-family':'Courier Prime,Courier New,monospace',
+      fill:'rgba(239,68,68,0.9)'});
+    lt.textContent = lbl;
+    g.appendChild(lt);
+  }
+}
+
+/* ================================================================
+   DRAW BARS + HIT ZONES
+================================================================ */
+function drawBars(c, rows) {
+  const g  = clearGroup('g-bars');
+  const gh = clearGroup('g-hitzones');
+  if (!rows||!rows.length) return;
+
+  const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax);
+  if (!visible.length) return;
+
+  // Intraday bars use their own scale
+  const maxVol = Math.max(...visible.map(r=>Math.max(r.call||0,r.put||0)),1);
+  const availH   = (c.plotB-c.plotT)*CONFIG.BAR_MAX_FRAC;
+  const strikes  = visible.map(r=>r.strike);
+  const gap      = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
+  const halfBar  = Math.max(gap*0.22, 1.5);
+
+  for (const r of visible) {
+    const cx = c.toSvgX(r.strike);
+
+    // Call — blue, left
+    if (r.call>0) {
+      const h=r.call/maxVol*availH;
+      g.appendChild(svgEl('rect',{x:cx-halfBar*2-0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(59,130,246,0.75)',stroke:'#60a5fa','stroke-width':'0.5'}));
+    }
+    // Put — yellow, right
+    if (r.put>0) {
+      const h=r.put/maxVol*availH;
+      g.appendChild(svgEl('rect',{x:cx+0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(250,204,21,0.75)',stroke:'#facc15','stroke-width':'0.5'}));
+    }
+
+    // Invisible hit zone spanning full bar column height for easy clicking
+    const maxH = Math.max(r.call||0,r.put||0)/maxVol*availH;
+    if (maxH <= 0) continue;
+    const hitRect = svgEl('rect',{
+      x: cx-halfBar*2-0.5, y: c.plotB-maxH,
+      width: halfBar*4+1, height: maxH,
+      fill: 'transparent', stroke: 'none',
+      style: 'cursor:pointer',
+    });
+    hitRect.dataset.strike = r.strike;
+    hitRect.dataset.call   = r.call;
+    hitRect.dataset.put    = r.put;
+    hitRect.dataset.vol    = r.vol != null ? (r.vol*100).toFixed(2)+'%' : '—';
+    // Attach OI data if available for this strike
+    if (oiData && oiData.rows) {
+      const oiRow = oiData.rows.find(o => o.strike === r.strike);
+      hitRect.dataset.oicall = oiRow ? oiRow.call : '';
+      hitRect.dataset.oiput  = oiRow ? oiRow.put  : '';
+    }
+    gh.appendChild(hitRect);
+  }
+}
+
+/* ================================================================
+   DRAW OI BARS — hollow neon outlines, in front of intraday bars
+   Put  = hollow neon blue  (#22d3ee, cyan-blue)
+   Call = hollow neon yellow (#fde047)
+   Share the same maxVol scale as intraday so heights are comparable.
+================================================================ */
+function drawOIBars(c, rows) {
+  const g = clearGroup('g-oibars');
+  if (!rows || !rows.length) return;
+
+  const visible = rows.filter(r => r.strike >= c.xMin && r.strike <= c.xMax);
+  if (!visible.length) return;
+
+  // OI bars use their own scale
+  const maxVol = Math.max(...visible.map(r => Math.max(r.call||0, r.put||0)), 1);
+  const availH   = (c.plotB - c.plotT) * CONFIG.BAR_MAX_FRAC;
+
+  const strikes  = visible.map(r => r.strike);
+  const gap      = strikes.length > 1 ? c.toSvgX(strikes[1]) - c.toSvgX(strikes[0]) : 10;
+  const halfBar  = Math.max(gap * 0.22, 1.5);
+  const bw       = halfBar * 2;
+
+  for (const r of visible) {
+    const cx = c.toSvgX(r.strike);
+
+    // OI Call — hollow neon red, left side (same position as intraday call)
+    if (r.call > 0) {
+      const h = Math.max(r.call / maxVol * availH, 0.5);
+      g.appendChild(svgEl('rect', {
+        x: cx - bw - 0.5, y: c.plotB - h,
+        width: bw, height: h,
+        fill: 'none',
+        stroke: '#ff4444', 'stroke-width': '1.5',
+      }));
+    }
+
+    // OI Put — hollow neon green, right side (same position as intraday put)
+    if (r.put > 0) {
+      const h = Math.max(r.put / maxVol * availH, 0.5);
+      g.appendChild(svgEl('rect', {
+        x: cx + 0.5, y: c.plotB - h,
+        width: bw, height: h,
+        fill: 'none',
+        stroke: '#22c55e', 'stroke-width': '1.5',
+      }));
+    }
+  }
+}
+
+/* ================================================================
+   DRAW VOL SETTLE CURVE — anchored to baseline (plotB), grows upward
+================================================================ */
+function drawVolCurve(c, rows) {
+  const g = clearGroup('g-volcurve');
+  if (!rows||!rows.length) return;
+
+  const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax && r.vol!=null && r.vol>0);
+  if (visible.length<2) return;
+
+  const vols = visible.map(r=>r.vol);
+  const minV = Math.min(...vols), maxV = Math.max(...vols);
+  // Scale: vol curve fills same vertical space as bars (BAR_MAX_FRAC of plot height)
+  // plotB = baseline (0), up to plotB - availH at the top
+  const availH = (c.plotB - c.plotT) * CONFIG.BAR_MAX_FRAC;
+  // minV maps to plotB (baseline), maxV maps to plotB - availH (top of bar area)
+  function toVolY(v) {
+    return Math_.scale(v, minV, maxV, c.plotB, c.plotB - availH);
+  }
+
+  const pts = visible.map(r=>`${c.toSvgX(r.strike)},${toVolY(r.vol)}`);
+
+  g.appendChild(svgEl('polyline',{
+    points: pts.join(' '),
+    fill:'none', stroke:'#a78bfa',
+    'stroke-width':'1.5','stroke-linejoin':'round','stroke-linecap':'round',
+  }));
+
+  // Label min/max vol
+  const fmtV = v=>(v*100).toFixed(1)+'%';
+  const minRow = visible.reduce((a,b)=>a.vol<b.vol?a:b);
+  const maxRow = visible.reduce((a,b)=>a.vol>b.vol?a:b);
+  for (const row of [minRow, maxRow]) {
+    const sx=c.toSvgX(row.strike), sy=toVolY(row.vol);
+    const t=svgEl('text',{x:sx,y:sy-4,'text-anchor':'middle','font-size':'7',
+      'font-family':'Courier Prime,Courier New,monospace',fill:'#a78bfa',opacity:'0.9'});
+    t.textContent=fmtV(row.vol);
+    g.appendChild(t);
+  }
+}
+
+/* ================================================================
+   DRAW EXPECTED-MOVE ARROW
+   Sits inside the SVG just above the baseline (at plotB - arrowY).
+   Arrow extends left and right from mean by:
+     halfLen (price units) = (minVol / 16) * mean
+   minVol = smallest non-zero vol in visible rows.
+================================================================ */
+function drawArrow(c, rows) {
+  const g = clearGroup('g-arrow');
+  if (!rows || !rows.length) return;
+
+  const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax && r.vol!=null && r.vol>0);
+  if (!visible.length) return;
+
+  const minVol = Math.min(...visible.map(r=>r.vol));
+  const halfLen = (minVol / 16) * state.mean;   // price units
+  const arrowY  = c.plotB - 12;                  // 12px above baseline inside SVG
+
+  const mx   = c.toSvgX(state.mean);
+  const lx   = c.toSvgX(Math.max(state.mean - halfLen, c.xMin));
+  const rx   = c.toSvgX(Math.min(state.mean + halfLen, c.xMax));
+  const aw   = 5;   // arrowhead width (px in SVG units)
+  const ah   = 4;   // arrowhead height
+
+  // Horizontal shaft
+  g.appendChild(svgEl('line',{x1:lx,y1:arrowY,x2:rx,y2:arrowY,stroke:'#fff','stroke-width':'1.5'}));
+
+  // Left arrowhead ◁
+  const lPath = `M ${lx} ${arrowY} L ${lx+ah} ${arrowY-aw/2} L ${lx+ah} ${arrowY+aw/2} Z`;
+  g.appendChild(svgEl('path',{d:lPath,fill:'#fff',stroke:'none'}));
+
+  // Right arrowhead ▷
+  const rPath = `M ${rx} ${arrowY} L ${rx-ah} ${arrowY-aw/2} L ${rx-ah} ${arrowY+aw/2} Z`;
+  g.appendChild(svgEl('path',{d:rPath,fill:'#fff',stroke:'none'}));
+
+  // Tick at mean
+  g.appendChild(svgEl('line',{x1:mx,y1:arrowY-4,x2:mx,y2:arrowY+4,stroke:'#fff','stroke-width':'1'}));
+
+  // Label: ±halfLen price units
+  const fmt = v => v < 1 ? v.toFixed(2) : Math.round(v).toLocaleString();
+  const lt = svgEl('text',{x:lx-3,y:arrowY-2,'text-anchor':'end','font-size':'7',
+    'font-family':'Courier Prime,Courier New,monospace',fill:'#aaa'});
+  lt.textContent = '−'+fmt(halfLen);
+  g.appendChild(lt);
+  const rt = svgEl('text',{x:rx+3,y:arrowY-2,'text-anchor':'start','font-size':'7',
+    'font-family':'Courier Prime,Courier New,monospace',fill:'#aaa'});
+  rt.textContent = '+'+fmt(halfLen);
+  g.appendChild(rt);
+}
+
+
+function drawCurve(c, mean, sd) {
+  const g=clearGroup('g-curve'), pts=[];
+  for (let i=0;i<=CONFIG.CURVE_PTS;i++) {
+    const x=c.xMin+i/CONFIG.CURVE_PTS*(c.xMax-c.xMin);
+    pts.push(`${c.toSvgX(x)},${c.toSvgY(Math_.normalPDF(x,mean,sd))}`);
+  }
+  g.appendChild(svgEl('polyline',{points:pts.join(' '),fill:'none',stroke:'#fff','stroke-width':'0.5','stroke-linejoin':'round'}));
+}
+
+/* ================================================================
+   DRAW MARKERS
+================================================================ */
+function drawMarkers(c, mean, sd) {
+  const g=clearGroup('g-markers');
+  for (const zone of CONFIG.ZONES) {
+    for (const side of [-1,1]) {
+      const dx=mean+side*zone.mult*sd;
+      if (dx<c.xMin||dx>c.xMax) continue;
+      const sx=c.toSvgX(dx);
+      g.appendChild(svgEl('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:zone.line,'stroke-width':'1.5'}));
+      
+      // CHANGED: Changed y from c.plotB-6 to c.plotB+14 (moved down by 20px)
+      const t=svgEl('text',{x:sx,y:c.plotB+14,'text-anchor':'middle','font-size':'9','font-family':'Courier Prime,Courier New,monospace',fill:zone.line,'font-weight':'bold'});
+      t.textContent=(side>0?'+':'')+(side*zone.mult)+'σ';
+      g.appendChild(t);
+    }
+  }
+  const mx=c.toSvgX(mean);
+  g.appendChild(svgEl('line',{x1:mx,y1:c.plotT,x2:mx,y2:c.plotB,stroke:'#22c55e','stroke-width':'1.5'}));
+  
+  // CHANGED: Changed y from c.plotB-6 to c.plotB+14 (moved down by 20px)
+  const mu=svgEl('text',{x:mx,y:c.plotB+14,'text-anchor':'middle','font-size':'9','font-family':'Courier Prime,Courier New,monospace',fill:'#fff','font-weight':'bold'});
+  mu.textContent='μ'; g.appendChild(mu);
+}
+
+/* ================================================================
+   DRAW X-AXIS LABELS
+   Always shows values at multiples of 25 (00/25/50/75).
+   The bell curve and σ markers still move with mean, but the
+   numbers on the axis stay aligned to the 25-step grid.
+================================================================ */
+function drawXAxisLabels(mean, sd) {
+  const con = document.getElementById('x-axis-labels'); con.innerHTML='';
+  const c   = makeCoords(mean, sd);
+  // Collect every 25-multiple in the visible range
+  const first = Math.ceil(c.xMin / 25) * 25;
+  const ticks = [];
+  for (let v = first; v <= c.xMax + 0.001; v += 25) ticks.push(v);
+
+  // Show every Nth to avoid crowding (aim for ≤17 labels)
+  const skip = Math.max(1, Math.ceil(ticks.length / 17));
+
+  ticks.forEach((val, i) => {
+    if (i % skip !== 0 && i !== ticks.length - 1) return;
+    const sigmaFrac = Math.abs(val - mean) / sd;
+    const sigmaRnd  = Math.round(sigmaFrac * 10) / 10;
+    const sigmaInt  = Math.round(sigmaRnd);
+
+    let sub = '', cls = 'x-tick';
+    const isExactMean = Math.abs(val - mean) < 0.5;
+    if (isExactMean) {
+      sub = 'μ'; cls += ' is-mean';
+    } else if (Number.isInteger(sigmaInt) && sigmaInt >= 1 && sigmaInt <= 3 && Math.abs(sigmaRnd - sigmaInt) < 0.08) {
+      const sign = val > mean ? '+' : '';
+      sub  = sign + sigmaInt + 'σ';
+      cls += sigmaInt===1?' is-1sd':sigmaInt===2?' is-2sd':' is-3sd';
+    }
+
+    const d = document.createElement('div');
+    d.className = cls;
+    // Position absolutely based on x fraction so it aligns with the SVG
+    const frac = (val - c.xMin) / (c.xMax - c.xMin);
+    d.style.position = 'absolute';
+    d.style.left = (frac * 100) + '%';
+    d.style.transform = 'translateX(-50%)';
+    d.innerHTML = val.toLocaleString() + (sub ? `<span class="sub">${sub}</span>` : '');
+    con.appendChild(d);
+  });
+}
+
+/* ================================================================
+   UPDATE STATS
+================================================================ */
+function updateStats(mean, sd) {
+  const f=v=>v.toLocaleString(undefined,{maximumFractionDigits:2});
+  document.getElementById('val-m3').textContent=f(mean-3*sd);
+  document.getElementById('val-m2').textContent=f(mean-2*sd);
+  document.getElementById('val-m1').textContent=f(mean-1*sd);
+  document.getElementById('val-mean').textContent=f(mean);
+  document.getElementById('val-p1').textContent=f(mean+1*sd);
+  document.getElementById('val-p2').textContent=f(mean+2*sd);
+  document.getElementById('val-p3').textContent=f(mean+3*sd);
+  if (liveData) {
+    document.getElementById('val-calls').textContent=liveData.callTotal;
+    document.getElementById('val-puts').textContent=liveData.putTotal;
+    document.getElementById('val-vol').textContent=liveData.vol+' / '+liveData.futChg;
+  }
+}
+
+/* ================================================================
+   ZOOM + PAN
+================================================================ */
+const MIN_ZOOM = 0.25, MAX_ZOOM = 16;
+
+function adjustZoom(factor) {
+  const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, state.zoom * factor));
+  state.zoom = newZoom;
+  document.getElementById('zoom-label').textContent =
+    newZoom >= 1 ? Math.round(newZoom) + '×' : '1/' + Math.round(1/newZoom) + '×';
+  render();
+}
+
+function resetZoom() {
+  state.zoom = 1.0;
+  state.panOffset = 0;
+  document.getElementById('zoom-label').textContent = '1×';
+  render();
+}
+
+// Scroll-to-zoom on the chart
+document.getElementById('chart').addEventListener('wheel', e => {
+  e.preventDefault();
+  // Zoom toward the mouse x position
+  const rect   = e.currentTarget.getBoundingClientRect();
+  const frac   = (e.clientX - rect.left) / rect.width;  // 0–1 across chart
+  const c      = makeCoords(state.mean, state.sd > 0 ? state.sd : 50);
+  const mousePrice = c.xMin + frac * (c.xMax - c.xMin);  // price at cursor
+
+  const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+  const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, state.zoom * factor));
+
+  // Adjust panOffset so the price under cursor stays fixed
+  const centre = state.mean + state.panOffset;
+  const newHalf = CONFIG.X_HALF / newZoom;
+  // cursor was at frac of old range; keep it at frac of new range
+  const oldHalf = CONFIG.X_HALF / state.zoom;
+  state.panOffset = mousePrice - state.mean - (frac - 0.5) * 2 * newHalf;
+  state.zoom = newZoom;
+  document.getElementById('zoom-label').textContent =
+    newZoom >= 1 ? Math.round(newZoom) + '×' : '1/' + Math.round(1/newZoom) + '×';
+  render();
+}, { passive: false });
+
+// Drag-to-pan
+let dragState = null;
+document.getElementById('chart').addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  dragState = {
+    startX: e.clientX,
+    startPan: state.panOffset,
+    chartW: e.currentTarget.getBoundingClientRect().width,
+  };
+  e.currentTarget.style.cursor = 'grabbing';
+});
+document.addEventListener('mousemove', e => {
+  if (!dragState) return;
+  const dx    = e.clientX - dragState.startX;
+  const range = (CONFIG.X_HALF / state.zoom) * 2;
+  const pricePerPx = range / dragState.chartW;
+  state.panOffset = dragState.startPan - dx * pricePerPx;
+  render();
+});
+document.addEventListener('mouseup', () => {
+  if (dragState) {
+    dragState = null;
+    document.getElementById('chart').style.cursor = 'grab';
+  }
+});
+
+// Touch pan (mobile)
+let touchState = null;
+document.getElementById('chart').addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    touchState = { startX: e.touches[0].clientX, startPan: state.panOffset,
+      chartW: e.currentTarget.getBoundingClientRect().width };
+  } else if (e.touches.length === 2) {
+    touchState = { pinchDist: Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY), startZoom: state.zoom };
+  }
+}, { passive: true });
+document.getElementById('chart').addEventListener('touchmove', e => {
+  if (!touchState) return;
+  if (e.touches.length === 1 && touchState.startPan !== undefined) {
+    const dx = e.touches[0].clientX - touchState.startX;
+    const range = (CONFIG.X_HALF / state.zoom) * 2;
+    state.panOffset = touchState.startPan - dx * (range / touchState.chartW);
+    render();
+  } else if (e.touches.length === 2 && touchState.pinchDist) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY);
+    const factor = dist / touchState.pinchDist;
+    state.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, touchState.startZoom * factor));
+    document.getElementById('zoom-label').textContent =
+      state.zoom >= 1 ? Math.round(state.zoom) + '×' : '1/' + Math.round(1/state.zoom) + '×';
+    render();
+  }
+}, { passive: true });
+document.getElementById('chart').addEventListener('touchend', () => { touchState = null; });
+
+
+function render() {
+  try {
+    const mean = state.mean;
+    const sd   = state.sd > 0 ? state.sd : 75;
+    const c    = makeCoords(mean, sd);
+    drawGrid(c);
+    drawZones(c,mean,sd);
+    drawVolZone(c);
+    drawFutureLine(c);
+    drawDotGrid(c,mean,sd);
+    drawBars(c, liveData?liveData.rows:null);
+    drawOIBars(c, oiData?oiData.rows:null);
+    drawVolCurve(c, liveData?liveData.rows:null);
+    drawCurve(c,mean,sd);
+    drawMarkers(c,mean,sd);
+    drawArrow(c, liveData?liveData.rows:null);
+    drawXAxisLabels(mean,sd);
+    updateStats(mean,sd);
+  } catch(e) {
+    console.error('render() error:', e);
+    document.getElementById('err-banner').style.display='block';
+    document.getElementById('err-banner').textContent='⚠ Render error: '+e.message+' — '+e.stack;
+  }
+}
+
+/* ================================================================
+   TOOLTIP — click on bar hit zone
+================================================================ */
+const tooltip = document.getElementById('tooltip');
+document.getElementById('chart').addEventListener('click', e => {
+  const r = e.target.closest('[data-strike]');
+  if (!r) { tooltip.style.display='none'; return; }
+  document.getElementById('tt-strike').textContent = 'Strike  ' + parseFloat(r.dataset.strike).toLocaleString();
+  document.getElementById('tt-call').textContent   = '● Call (intraday)  ' + r.dataset.call + ' · OI ' + (r.dataset.oicall !== '' ? r.dataset.oicall : '—');
+  document.getElementById('tt-put').textContent    = '● Put  (intraday)  ' + r.dataset.put  + ' · OI ' + (r.dataset.oiput  !== '' ? r.dataset.oiput  : '—');
+  document.getElementById('tt-vol').textContent    = '● IV      ' + r.dataset.vol;
+  tooltip.style.display = 'block';
+  tooltip.style.left = (e.clientX+14)+'px';
+  tooltip.style.top  = (e.clientY-10)+'px';
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#chart')) tooltip.style.display='none';
+});
+
+/* ================================================================
+   INPUTS
+================================================================ */
+function readInputs() {
+  const m = parseFloat(document.getElementById('inp-mean').value);
+  if (!isNaN(m) && m > 0) {
+    state.mean = m;
+    document.getElementById('inp-mean').dataset.userEdited = 'true';
+    document.getElementById('btn-mean-reset').style.display = 'inline-block';
+  }
+  recomputeSd();
+  render();
+}
+
+function resetMean() {
+  const inp = document.getElementById('inp-mean');
+  inp.dataset.userEdited = '';
+  document.getElementById('btn-mean-reset').style.display = 'none';
+  document.getElementById('mean-lbl').textContent = 'Auto = Future price · type to override';
+  if (liveData && liveData.future != null) {
+    state.mean = liveData.future;
+    inp.value  = liveData.future;
+    recomputeSd();
+    render();
+  }
+}
+document.getElementById('inp-mean').addEventListener('input', readInputs);
+
+// Vol-price slider — snaps to nearest 25, auto-fills vol from smile
+document.getElementById('inp-vol-price').addEventListener('input', () => {
+  updateVolZoneFromSlider();
+});
+
+function snapTo25(val) {
+  return Math.round(val / 5) * 5;
+}
+
+function updateVolZoneFromSlider() {
+  const raw    = parseFloat(document.getElementById('inp-vol-price').value);
+  const price  = snapTo25(raw);
+  document.getElementById('vol-price-display').textContent = price.toLocaleString();
+
+  const volInput = document.getElementById('inp-vol-val');
+  if (liveData && liveData.rows && volInput.dataset.userEdited !== 'true') {
+    const rows  = liveData.rows.filter(r => r.vol != null && r.vol > 0);
+    const below = rows.filter(r => r.strike <= price).slice(-1)[0];
+    const above = rows.filter(r => r.strike >= price)[0];
+    if (below && above) {
+      const t   = below.strike === above.strike ? 0
+        : (price - below.strike) / (above.strike - below.strike);
+      const vol = below.vol + t * (above.vol - below.vol);
+      volInput.value = (vol * 100).toFixed(2);
+    } else {
+      volInput.value = '';
+    }
+  }
+  render();
+}
+
+function initVolPriceSlider() {
+  if (!liveData) return;
+  const c      = makeCoords(state.mean, state.sd > 0 ? state.sd : 50);
+  const slider = document.getElementById('inp-vol-price');
+  // Set range to visible x-axis ± some buffer, snapped to 25
+  const lo = Math.floor(c.xMin / 25) * 25;
+  const hi = Math.ceil (c.xMax / 25) * 25;
+  slider.min  = lo;
+  slider.max  = hi;
+  slider.step = 5;
+  // Start at future price snapped to nearest 25
+  const startPrice = liveData.future != null
+    ? snapTo25(liveData.future)
+    : snapTo25((lo + hi) / 2);
+  slider.value = startPrice;
+  document.getElementById('vol-price-display').textContent = startPrice.toLocaleString();
+  updateVolZoneFromSlider();
+}
+document.getElementById('inp-vol-val').addEventListener('input', () => {
+  document.getElementById('inp-vol-val').dataset.userEdited = 'true';
+  render();
+});
+document.getElementById('inp-vol-val').addEventListener('change', () => {
+  // If cleared, revert to auto-lookup
+  if (document.getElementById('inp-vol-val').value === '')
+    document.getElementById('inp-vol-val').dataset.userEdited = '';
+});
+
+/* ================================================================
+   COMPUTE SD from IV and DTE — auto-fills input, user can override
+================================================================ */
+function recomputeSd() {
+  const mean = state.mean;
+  if (!liveData) return;
+  const iv  = parseFloat(liveData.vol);
+  const dte = parseFloat(liveData.dte);
+  if (!isNaN(iv) && !isNaN(dte) && dte > 0 && iv > 0) {
+    computedSd = Math.round(mean * (iv / 100) * Math.sqrt(dte / 252) * 10) / 10;
+    const sdInput = document.getElementById('inp-sd');
+    if (sdInput.dataset.userEdited !== 'true') {
+      sdInput.value = computedSd;
+      state.sd = computedSd;
+    }
+    document.getElementById('sd-formula-lbl').textContent =
+      `${mean.toLocaleString()} × ${iv}% × √(${dte}/252) = ${computedSd}`;
+  }
+}
+
+document.getElementById('inp-sd').addEventListener('input', () => {
+  const s = parseFloat(document.getElementById('inp-sd').value);
+  document.getElementById('inp-sd').dataset.userEdited = 'true';
+  if (!isNaN(s) && s > 0) { state.sd = s; render(); }
+});
+document.getElementById('inp-sd').addEventListener('change', () => {
+  const s = parseFloat(document.getElementById('inp-sd').value);
+  if (isNaN(s) || s <= 0) {
+    // cleared — revert to auto
+    document.getElementById('inp-sd').dataset.userEdited = '';
+    recomputeSd(); render();
+  }
+});
+
+// Remove old inp-sd userEdited listener (field no longer exists)
+
+
+function startCountdown(ms) {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownSec = Math.round(ms/1000);
+  const el = document.getElementById('countdown');
+  el.textContent = 'Next refresh in '+countdownSec+'s';
+  countdownTimer = setInterval(()=>{
+    countdownSec--;
+    if (countdownSec<=0) {
+      el.textContent='Refreshing…';
+    } else {
+      el.textContent='Next refresh in '+countdownSec+'s';
+    }
+  },1000);
+}
+
+/* ================================================================
+   FETCH
+================================================================ */
+async function fetchAndRender() {
+  const dot=document.getElementById('pulse-dot');
+  const statusEl=document.getElementById('status-txt');
+  const errBanner=document.getElementById('err-banner');
+  dot.classList.remove('stale');
+  statusEl.textContent='Fetching…';
+  try {
+    const cb = Date.now();
+    const [resIntraday, resOI] = await Promise.all([
+      fetch(DATA_URL + '?cb=' + cb, {cache:'no-store'}),
+      fetch(OI_URL   + '?cb=' + cb, {cache:'no-store'}),
+    ]);
+    if (!resIntraday.ok) throw new Error('Intraday HTTP ' + resIntraday.status);
+    liveData = parseIntraday(await resIntraday.text());
+    if (resOI.ok) {
+      oiData = parseIntraday(await resOI.text());
+    }
+    // Update mean from future price ONLY if user hasn't manually typed a value
+    const meanInput = document.getElementById('inp-mean');
+    if (liveData.future != null && meanInput.dataset.userEdited !== 'true') {
+      state.mean = liveData.future;
+      meanInput.value = liveData.future;
+      document.getElementById('mean-lbl').textContent = 'Auto = Future price · type to override';
+    } else if (meanInput.dataset.userEdited === 'true') {
+      document.getElementById('mean-lbl').textContent = 'Locked to your input · refresh to reset';
+    }
+    recomputeSd();
+    initVolPriceSlider();
+    document.getElementById('h-title').textContent=liveData.title+' · SD Visualizer';
+    document.getElementById('h-sub').textContent='DTE: '+liveData.dte+' · Future: '+(liveData.future||'—')+' ('+liveData.futChg+') · IV: '+liveData.vol;
+    errBanner.style.display='none';
+    statusEl.textContent='Updated '+new Date().toLocaleTimeString();
+    document.getElementById('footer-txt').textContent=
+      'Source · github.com/pageth/Vol2VolData · updated '+new Date().toLocaleTimeString();
+  } catch(err) {
+    dot.classList.add('stale');
+    statusEl.textContent='Fetch failed · '+new Date().toLocaleTimeString();
+    errBanner.style.display='block';
+    errBanner.textContent='⚠ '+err.message;
+  }
+  render();
+  // Restart countdown after each fetch
+  const ms=parseInt(document.getElementById('sel-interval').value,10);
+  startCountdown(ms);
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  const ms=parseInt(document.getElementById('sel-interval').value,10);
+  refreshTimer=setInterval(fetchAndRender,ms);
+  startCountdown(ms);
+}
+
+document.getElementById('sel-interval').addEventListener('change',()=>{ scheduleRefresh(); fetchAndRender(); });
+document.getElementById('btn-refresh').addEventListener('click',()=>{ fetchAndRender(); });
+
+/* ================================================================
+   INIT
+================================================================ */
+render();
+// SD starts at 50 — treat as user default so first fetch doesn't auto-overwrite
+document.getElementById('inp-sd').dataset.userEdited = 'true';
+fetchAndRender();
+scheduleRefresh();
+</script>
+</body>
+</html>
