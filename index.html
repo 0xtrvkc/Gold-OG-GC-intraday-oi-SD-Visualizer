@@ -696,7 +696,7 @@ footer {
         <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()" style="display:none">↺ reset</button>
         <span id="gold-price-badge" style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;"></span>
       </div>
-      <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;margin-top:3px;line-height:1.4;">⏳ Fetching GC=F via Yahoo… (~2–4 s)</div>
+      <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;margin-top:3px;line-height:1.4;">⏳ Fetching GC=F…</div>
     </div>
 
     <div class="input-group">
@@ -757,6 +757,7 @@ footer {
     <button class="btn-sm" onclick="resetZoom()" style="color:var(--fg3)">Reset</button>
     <span class="zoom-level" id="zoom-label">2×</span>
     <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
+    <button id="btn-bar-stack" class="toggle-btn active" onclick="toggleBarStack()" style="margin-left:auto">▤ Stacked</button>
   </div>
 
   <!-- CHART + SIDEBAR -->
@@ -789,13 +790,13 @@ footer {
         <div class="sdg-track-wrap">
           <!-- zone labels left -->
           <div class="sdg-labels" id="sdg-labels">
-            <div class="sdg-label m3">−💀</div>
+            <div class="sdg-label m3">💀</div>
             <div class="sdg-label m2">🚀</div>
             <div class="sdg-label m1">🤑</div>
-            <div class="sdg-label z0">μ</div>
+            <div class="sdg-label z0">🤷🏻‍♂️</div>
             <div class="sdg-label p1">🤑</div>
             <div class="sdg-label p2">🚀</div>
-            <div class="sdg-label p3">+💀</div>
+            <div class="sdg-label p3">💀</div>
           </div>
           <!-- the actual track with bands + arrow -->
           <div class="sdg-track" id="sdg-track">
@@ -825,20 +826,20 @@ footer {
   <!-- LEGEND -->
   <div class="legend">
     <div class="legend-item">
-      <div class="legend-swatch" style="background:rgba(26,58,107,0.14);border-color:#1a3a6b;"></div>
-      <div><span class="legend-name" style="color:#1a3a6b">Calls</span><span class="legend-desc">Call volume per strike</span></div>
+      <div class="legend-swatch" style="background:rgba(26,58,107,0.22);border-color:#1a3a6b;"></div>
+      <div><span class="legend-name" style="color:#1a3a6b">Calls</span><span class="legend-desc">Intraday call vol · bottom</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-swatch" style="background:rgba(201,146,10,0.12);border-color:#c9920a;"></div>
-      <div><span class="legend-name" style="color:#c9920a">Puts</span><span class="legend-desc">Put volume per strike</span></div>
+      <div class="legend-swatch" style="background:rgba(201,146,10,0.22);border-color:#c9920a;"></div>
+      <div><span class="legend-name" style="color:#c9920a">Puts</span><span class="legend-desc">Intraday put vol · top</span></div>
     </div>
     <div class="legend-item">
       <div class="legend-swatch" style="background:transparent;border:1.5px solid #c9920a;"></div>
-      <div><span class="legend-name" style="color:#c9920a">OI Puts</span><span class="legend-desc">Open interest puts (hollow)</span></div>
+      <div><span class="legend-name" style="color:#c9920a">OI Puts</span><span class="legend-desc">Open interest puts (outline, front)</span></div>
     </div>
     <div class="legend-item">
       <div class="legend-swatch" style="background:transparent;border:1.5px solid #1a3a6b;"></div>
-      <div><span class="legend-name" style="color:#1a3a6b">OI Calls</span><span class="legend-desc">Open interest calls (hollow)</span></div>
+      <div><span class="legend-name" style="color:#1a3a6b">OI Calls</span><span class="legend-desc">Open interest calls (outline, front)</span></div>
     </div>
     <div class="legend-item">
       <div class="legend-line" style="border-top:1px dashed #9a9080;"></div>
@@ -891,6 +892,7 @@ const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIDa
 ================================================================ */
 let state = { mean: 4500, sd: 50, zoom: 2.0, panOffset: 0 };
 let volZoneVisible = false;
+let barStackMode   = true;   // true = stacked, false = side-by-side
 let computedSd = null;
 let liveData   = null;
 let oiData     = null;
@@ -1067,6 +1069,12 @@ function drawFutureLine(c) {
     gLine.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:tc('#6a5a48','#555555'),'stroke-width':'1','stroke-dasharray':'4,3'}));
     const t = el('text',{x:sx+4,y:c.plotT+22,'font-size':'8','font-family':'IBM Plex Mono,monospace',fill:tc('#6a5a48','#666666'),'font-weight':'500'});
     t.textContent = fx.toLocaleString(); gLine.appendChild(t);
+    // IV at future price — shown on the line below
+    if (!isNaN(iv) && iv > 0) {
+      const ivT = el('text',{x:sx+4, y:c.plotT+32, 'font-size':'7.5', 'font-family':'IBM Plex Mono,monospace',
+        fill:tc('#8a7a6a','#888888'), 'font-weight':'400'});
+      ivT.textContent = 'IV ' + iv.toFixed(1) + '%'; gLine.appendChild(ivT);
+    }
   }
 }
 
@@ -1104,9 +1112,32 @@ function drawVolZone(c) {
 }
 
 /* ================================================================
-  DRAW BARS + HIT ZONES
-  Hit zones cover BOTH solid intraday bars AND hollow OI bars.
-  OI-only strikes (no intraday volume) also get a hit zone.
+  SHARED BAR SCALE
+  Both intraday and OI are scaled against the same maximum so they
+  are directly comparable. In stacked mode max = max(call+put);
+  in side-by-side mode max = max(call, put).
+================================================================ */
+function getBarScale(c) {
+  const intRows = liveData ? (liveData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+  const oiRows  = oiData   ? (oiData.rows  ||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+  const all = [...intRows, ...oiRows];
+  if (!all.length) return { maxVol:1, availH:(c.plotB-c.plotT)*0.85, halfBar:4 };
+  const maxVol = barStackMode
+    ? Math.max(...all.map(r=>(r.call||0)+(r.put||0)), 1)
+    : Math.max(...all.map(r=>Math.max(r.call||0,r.put||0)), 1);
+  const availH = (c.plotB-c.plotT)*0.85;
+  // Compute gap from whichever dataset has more strikes
+  const refRows = intRows.length ? intRows : oiRows;
+  const strikes = refRows.map(r=>r.strike).sort((a,b)=>a-b);
+  const gap = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
+  const halfBar = barStackMode ? Math.max(gap*0.34, 2.5) : Math.max(gap*0.22, 1.5);
+  return { maxVol, availH, halfBar, gap };
+}
+
+/* ================================================================
+  DRAW BARS (INTRADAY) + HIT ZONES
+  Stacked: call fills from bottom, put stacks on top — one solid bar.
+  Side-by-side: call left, put right (original layout).
 ================================================================ */
 function drawBars(c, rows) {
   const g  = clearG('g-bars');
@@ -1115,86 +1146,114 @@ function drawBars(c, rows) {
   const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax);
   if (!visible.length) return;
   const oiVisible = oiData ? (oiData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
-  const allVols = [...visible,...oiVisible].map(r=>Math.max(r.call||0,r.put||0));
-  const maxVol = Math.max(...allVols, 1);
-  const availH = (c.plotB-c.plotT)*0.85;
-  const strikes = visible.map(r=>r.strike);
-  const gap = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
-  const halfBar = Math.max(gap*0.22, 1.5);
+  const { maxVol, availH, halfBar } = getBarScale(c);
 
-  // Build a map of all strikes we need hit zones for (intraday + OI)
+  // Build unified strike map for hit zones (intraday + OI)
   const strikeMap = new Map();
-  for (const r of visible) strikeMap.set(r.strike, { ...r, oicall:0, oiput:0 });
+  for (const r of visible)  strikeMap.set(r.strike, { ...r, oicall:0, oiput:0 });
   for (const r of oiVisible) {
     if (strikeMap.has(r.strike)) {
-      const entry = strikeMap.get(r.strike);
-      entry.oicall = r.call || 0;
-      entry.oiput  = r.put  || 0;
+      const e = strikeMap.get(r.strike);
+      e.oicall = r.call||0; e.oiput = r.put||0;
     } else {
-      // OI-only strike — add with zero intraday volume
       strikeMap.set(r.strike, { strike:r.strike, call:0, put:0, vol:null, oicall:r.call||0, oiput:r.put||0 });
     }
   }
 
-  // Draw solid intraday bars
+  // ── Intraday bars ──────────────────────────────────────────────
   for (const r of visible) {
     const cx = c.toSvgX(r.strike);
-    if (r.call>0) {
-      const h=r.call/maxVol*availH;
-      g.appendChild(el('rect',{x:cx-halfBar*2-0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(26,58,107,0.14)',stroke:'#1a3a6b','stroke-width':'0.5'}));
-    }
-    if (r.put>0) {
-      const h=r.put/maxVol*availH;
-      g.appendChild(el('rect',{x:cx+0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(201,146,10,0.12)',stroke:'#c9920a','stroke-width':'0.5'}));
+    if (barStackMode) {
+      const hC = (r.call||0) / maxVol * availH;
+      const hP = (r.put ||0) / maxVol * availH;
+      const bx = cx - halfBar;
+      const bw = halfBar * 2;
+      // Call segment (bottom)
+      if (hC > 0)
+        g.appendChild(el('rect',{x:bx, y:c.plotB-hC, width:bw, height:hC,
+          fill:'rgba(26,58,107,0.22)', stroke:'#1a3a6b', 'stroke-width':'0.5'}));
+      // Put segment (stacked on top of call)
+      if (hP > 0)
+        g.appendChild(el('rect',{x:bx, y:c.plotB-hC-hP, width:bw, height:hP,
+          fill:'rgba(201,146,10,0.22)', stroke:'#c9920a', 'stroke-width':'0.5'}));
+      // Divider line at call/put boundary
+      if (hC > 0 && hP > 0)
+        g.appendChild(el('line',{x1:bx, y1:c.plotB-hC, x2:bx+bw, y2:c.plotB-hC,
+          stroke:tc('rgba(255,255,255,0.6)','rgba(0,0,0,0.35)'), 'stroke-width':'0.75'}));
+    } else {
+      if (r.call>0) {
+        const h = r.call/maxVol*availH;
+        g.appendChild(el('rect',{x:cx-halfBar*2-0.5, y:c.plotB-h, width:halfBar*2, height:h,
+          fill:'rgba(26,58,107,0.18)', stroke:'#1a3a6b', 'stroke-width':'0.5'}));
+      }
+      if (r.put>0) {
+        const h = r.put/maxVol*availH;
+        g.appendChild(el('rect',{x:cx+0.5, y:c.plotB-h, width:halfBar*2, height:h,
+          fill:'rgba(201,146,10,0.16)', stroke:'#c9920a', 'stroke-width':'0.5'}));
+      }
     }
   }
 
-  // Draw hit zones for every strike in the combined map
+  // ── Hit zones (cover full bar stack height) ────────────────────
   for (const [strike, r] of strikeMap) {
     const cx = c.toSvgX(strike);
-    const maxH = Math.max(r.call||0, r.put||0, r.oicall||0, r.oiput||0) / maxVol * availH;
-    if (maxH <= 0) continue;
-    const hitRect = el('rect',{
-      x:cx-halfBar*2-0.5, y:c.plotB-maxH,
-      width:halfBar*4+1, height:maxH,
-      fill:'rgba(0,0,0,0.01)', stroke:'none',
-      style:'cursor:crosshair',
+    const hTotal = barStackMode
+      ? ((r.call||0)+(r.put||0)) / maxVol * availH
+      : Math.max(r.call||0, r.put||0, r.oicall||0, r.oiput||0) / maxVol * availH;
+    if (hTotal <= 0) continue;
+    const hx = barStackMode ? cx-halfBar        : cx-halfBar*2-0.5;
+    const hw = barStackMode ? halfBar*2          : halfBar*4+1;
+    const hit = el('rect',{
+      x:hx, y:c.plotB-hTotal, width:hw, height:hTotal,
+      fill:'rgba(0,0,0,0.01)', stroke:'none', style:'cursor:crosshair',
     });
-    hitRect.dataset.strike = strike;
-    hitRect.dataset.call   = r.call   || 0;
-    hitRect.dataset.put    = r.put    || 0;
-    hitRect.dataset.vol    = r.vol != null ? (r.vol*100).toFixed(2)+'%' : '—';
-    hitRect.dataset.oicall = r.oicall || 0;
-    hitRect.dataset.oiput  = r.oiput  || 0;
-    gh.appendChild(hitRect);
+    hit.dataset.strike = strike;
+    hit.dataset.call   = r.call   || 0;
+    hit.dataset.put    = r.put    || 0;
+    hit.dataset.vol    = r.vol != null ? (r.vol*100).toFixed(2)+'%' : '—';
+    hit.dataset.oicall = r.oicall || 0;
+    hit.dataset.oiput  = r.oiput  || 0;
+    gh.appendChild(hit);
   }
 }
 
 /* ================================================================
-  DRAW OI BARS
+  DRAW OI BARS  — drawn in front of intraday (g-oibars is above g-bars)
+  Stacked: OI call outline from bottom, OI put outline stacked on top.
+  Side-by-side: original hollow left/right layout.
 ================================================================ */
 function drawOIBars(c, rows) {
   const g = clearG('g-oibars');
   if (!rows||!rows.length) return;
   const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax);
   if (!visible.length) return;
-  const intradayVisible = liveData ? (liveData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
-  const allVols = [...visible,...intradayVisible].map(r=>Math.max(r.call||0,r.put||0));
-  const maxVol = Math.max(...allVols, 1);
-  const availH = (c.plotB-c.plotT)*0.85;
-  const strikes = visible.map(r=>r.strike);
-  const gap = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
-  const halfBar = Math.max(gap*0.22, 1.5);
-  const bw = halfBar*2;
+  const { maxVol, availH, halfBar } = getBarScale(c);
+  const bw = halfBar * 2;
+
   for (const r of visible) {
     const cx = c.toSvgX(r.strike);
-    if (r.call>0) {
-      const h=Math.max(r.call/maxVol*availH,0.5);
-      g.appendChild(el('rect',{x:cx-bw-0.5,y:c.plotB-h,width:bw,height:h,fill:'none',stroke:'#1a3a6b','stroke-width':'1'}));
-    }
-    if (r.put>0) {
-      const h=Math.max(r.put/maxVol*availH,0.5);
-      g.appendChild(el('rect',{x:cx+0.5,y:c.plotB-h,width:bw,height:h,fill:'none',stroke:'#c9920a','stroke-width':'1'}));
+    if (barStackMode) {
+      const hC = (r.call||0) / maxVol * availH;
+      const hP = (r.put ||0) / maxVol * availH;
+      const bx = cx - halfBar;
+      // OI outline is 1px larger on each side so it frames the intraday fill
+      if (hC > 0)
+        g.appendChild(el('rect',{x:bx-1, y:c.plotB-hC, width:bw+2, height:hC,
+          fill:'none', stroke:'#1a3a6b', 'stroke-width':'1.2'}));
+      if (hP > 0)
+        g.appendChild(el('rect',{x:bx-1, y:c.plotB-hC-hP, width:bw+2, height:hP,
+          fill:'none', stroke:'#c9920a', 'stroke-width':'1.2'}));
+    } else {
+      if (r.call>0) {
+        const h = Math.max(r.call/maxVol*availH, 0.5);
+        g.appendChild(el('rect',{x:cx-bw-0.5, y:c.plotB-h, width:bw, height:h,
+          fill:'none', stroke:'#1a3a6b', 'stroke-width':'1'}));
+      }
+      if (r.put>0) {
+        const h = Math.max(r.put/maxVol*availH, 0.5);
+        g.appendChild(el('rect',{x:cx+0.5, y:c.plotB-h, width:bw, height:h,
+          fill:'none', stroke:'#c9920a', 'stroke-width':'1'}));
+      }
     }
   }
 }
@@ -1458,6 +1517,22 @@ document.getElementById('chart').addEventListener('touchmove',e=>{
 document.getElementById('chart').addEventListener('touchend',()=>{ touchState=null; });
 
 /* ================================================================
+  BAR STACK TOGGLE
+================================================================ */
+function toggleBarStack() {
+  barStackMode = !barStackMode;
+  const btn = document.getElementById('btn-bar-stack');
+  if (barStackMode) {
+    btn.textContent = '▤ Stacked';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '▥ Side-by-side';
+    btn.classList.remove('active');
+  }
+  render();
+}
+
+/* ================================================================
   VOL ZONE TOGGLE
 ================================================================ */
 function toggleVolZone() {
@@ -1649,17 +1724,30 @@ async function fetchData() {
     statusTxt.textContent='Updated '+now.toLocaleTimeString();
     // Update title
     if (liveData.title) document.getElementById('h-title').textContent=liveData.title.includes('SD')?liveData.title:'SD Visualizer — '+liveData.title;
-    // Compute SD from IV + DTE
-    if (liveData.future!=null && liveData.vol && liveData.dte) {
-      const iv=parseFloat(liveData.vol), dte=parseFloat(liveData.dte), fut=liveData.future;
-      if (!isNaN(iv)&&!isNaN(dte)&&dte>0) {
-        computedSd=fut*(iv/100)*Math.sqrt(dte/365);
+    // Compute SD from IV interpolated at the future price + DTE
+    if (liveData.future!=null && liveData.dte) {
+      const dte=parseFloat(liveData.dte), fut=liveData.future;
+      // Interpolate IV at the future price from the vol smile
+      let ivAtFut = NaN;
+      if (liveData.rows) {
+        const vrows = liveData.rows.filter(r=>r.vol!=null&&r.vol>0);
+        const below = vrows.filter(r=>r.strike<=fut).slice(-1)[0];
+        const above = vrows.filter(r=>r.strike>=fut)[0];
+        if (below && above) {
+          const t = below.strike===above.strike ? 0 : (fut-below.strike)/(above.strike-below.strike);
+          ivAtFut = (below.vol + t*(above.vol-below.vol))*100;
+        }
+      }
+      // Fallback to global vol if smile interpolation failed
+      if (isNaN(ivAtFut)) ivAtFut = parseFloat(liveData.vol);
+      if (!isNaN(ivAtFut)&&!isNaN(dte)&&dte>0&&ivAtFut>0) {
+        computedSd=fut*(ivAtFut/100)*Math.sqrt(dte/365);
         const sdInp=document.getElementById('inp-sd');
         if (sdInp.value===''||sdInp.dataset.auto==='1') {
           sdInp.value=computedSd.toFixed(1);
           sdInp.dataset.auto='1';
           state.sd=computedSd;
-          document.getElementById('sd-formula-lbl').textContent=`IV:${iv}% DTE:${dte} → σ=${computedSd.toFixed(0)}`;
+          document.getElementById('sd-formula-lbl').textContent=`IV@fut:${ivAtFut.toFixed(1)}% DTE:${dte} → σ=${computedSd.toFixed(0)}`;
         }
       }
     }
@@ -1797,13 +1885,117 @@ function tc(light, dark) { return isDark ? dark : light; }
 
 /* ================================================================
   GOLD FUTURES PRICE (GC=F via Yahoo Finance)
-  Uses allorigins CORS proxy — no API key needed.
+  Strategy:
+    1. Immediately show last cached price from localStorage (if any)
+    2. Try live fetch: rotate through 3 CORS proxies × 2 Yahoo hosts
+    3. Each attempt has a 5 s timeout so failures are fast
+    4. On success → update display + persist to cache
+    5. On total failure → keep cache value visible, prompt manual entry
 ================================================================ */
 let goldPriceFetched = false;
 
+const GOLD_CACHE_KEY = 'gcf_gold_cache_v1';
+
+// Two Yahoo hosts (query1 often blocked while query2 works, or vice-versa)
+const YF_HOSTS = [
+  'https://query1.finance.yahoo.com',
+  'https://query2.finance.yahoo.com',
+];
+// Three CORS proxies tried in order; first healthy one wins
+const CORS_PROXIES = [
+  url => 'https://api.allorigins.win/get?url='    + encodeURIComponent(url),
+  url => 'https://corsproxy.io/?url='             + encodeURIComponent(url),
+  url => 'https://thingproxy.freeboard.io/fetch/' + url,
+];
+
+// Fetch with a hard timeout
+function fetchWithTimeout(url, timeoutMs = 5000) {
+  const ctrl = new AbortController();
+  const tid   = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { cache: 'no-store', signal: ctrl.signal })
+    .finally(() => clearTimeout(tid));
+}
+
+// Pull open/prevClose out of a Yahoo v8/chart JSON result
+function extractPrices(data) {
+  const result = data?.chart?.result?.[0];
+  if (!result) throw new Error('no chart result');
+  const quote  = result.indicators?.quote?.[0];
+  const opens  = quote?.open  ?? [];
+  const closes = quote?.close ?? [];
+  let todayOpen = null, prevClose = null;
+  for (let i = opens.length - 1; i >= 0; i--) {
+    if (opens[i] != null && !isNaN(opens[i])) {
+      todayOpen = opens[i];
+      if (i > 0 && closes[i - 1] != null) prevClose = closes[i - 1];
+      break;
+    }
+  }
+  if (todayOpen == null) {
+    const meta = result.meta;
+    todayOpen = meta.regularMarketOpen ?? meta.regularMarketPrice ?? meta.previousClose;
+    prevClose = meta.previousClose ?? todayOpen;
+  }
+  if (!todayOpen || isNaN(todayOpen)) throw new Error('no open price');
+  return { todayOpen, prevClose };
+}
+
+// Apply a fetched/cached price to the UI
+function applyGoldPrice(todayOpen, prevClose, source) {
+  const meanInp = document.getElementById('inp-mean');
+  if (meanInp.value !== '' && meanInp.dataset.auto !== '1' && meanInp.dataset.auto !== 'gold') return;
+
+  const chgRaw = prevClose ? (todayOpen - prevClose) : 0;
+  const chgS   = (chgRaw >= 0 ? '+' : '') + chgRaw.toFixed(2);
+  const pct    = prevClose ? ((chgRaw / prevClose) * 100).toFixed(2) : '0.00';
+  const pctS   = (chgRaw >= 0 ? '+' : '') + pct + '%';
+  const fmt    = v => v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  meanInp.value = Math.round(todayOpen);
+  meanInp.dataset.auto = 'gold';
+  state.mean = Math.round(todayOpen);
+
+  document.getElementById('mean-lbl').textContent =
+    source + ': ' + fmt(todayOpen) + '  Δ: ' + chgS + ' (' + pctS + ')';
+  document.getElementById('gold-price-badge').textContent = 'Open ' + fmt(todayOpen);
+  document.getElementById('gold-price-badge').style.color = chgRaw >= 0
+    ? 'var(--oi-call)' : 'var(--danger)';
+
+  const slider = document.getElementById('inp-vol-price');
+  if (slider.dataset.init !== '1') {
+    slider.min   = Math.floor(todayOpen - 400);
+    slider.max   = Math.ceil(todayOpen + 400);
+    slider.value = todayOpen;
+    document.getElementById('vol-price-display').textContent = snapToGrid(todayOpen).toLocaleString();
+  }
+  render();
+  updateGauge();
+}
+
+// Load cached price immediately so the chart isn't blank while fetching
+function loadGoldCache() {
+  try {
+    const raw = localStorage.getItem(GOLD_CACHE_KEY);
+    if (!raw) return false;
+    const { todayOpen, prevClose, ts } = JSON.parse(raw);
+    if (!todayOpen) return false;
+    const ageH = (Date.now() - ts) / 3600000;
+    const ageLabel = ageH < 1
+      ? Math.round(ageH * 60) + ' min ago'
+      : ageH < 24 ? ageH.toFixed(1) + ' h ago' : Math.floor(ageH / 24) + ' d ago';
+    applyGoldPrice(todayOpen, prevClose, 'GC=F cached · ' + ageLabel);
+    return true;
+  } catch(e) { return false; }
+}
+
+function saveGoldCache(todayOpen, prevClose) {
+  try {
+    localStorage.setItem(GOLD_CACHE_KEY, JSON.stringify({ todayOpen, prevClose, ts: Date.now() }));
+  } catch(e) {}
+}
+
 async function fetchGoldPrice() {
   const meanInp = document.getElementById('inp-mean');
-  // Don't overwrite if the user has manually edited the field
   if (meanInp.value !== '' && meanInp.dataset.auto !== '1' && meanInp.dataset.auto !== 'gold') return;
 
   const statusEl = document.getElementById('mean-fetch-status');
@@ -1811,89 +2003,66 @@ async function fetchGoldPrice() {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--fg3)'; }
   }
 
-  // Use 1d interval/5d range — last candle open = today's 1D session open
-  // This matches the "Open" field on investing.com gold futures 1D chart
-  const YF_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=1d&range=5d';
-  const PROXY  = 'https://api.allorigins.win/get?url=' + encodeURIComponent(YF_URL);
-
-  setStatus('⏳ Fetching GC=F via Yahoo… (~2–4 s)');
-  try {
-    const res     = await fetch(PROXY, { cache: 'no-store' });
-    if (!res.ok) throw new Error('proxy ' + res.status);
-    setStatus('⏳ Parsing response…');
-    const wrapper = await res.json();
-    if (!wrapper.contents) throw new Error('empty proxy response');
-    const data    = JSON.parse(wrapper.contents);
-    const result  = data?.chart?.result?.[0];
-    if (!result) throw new Error('no result');
-
-    // Pull today's 1D candle open from the OHLC indicator array
-    const quote      = result.indicators?.quote?.[0];
-    const opens      = quote?.open  ?? [];
-    const closes     = quote?.close ?? [];
-
-    // Walk back from the end to find the most recent candle with a valid open
-    let todayOpen = null, prevClose = null;
-    for (let i = opens.length - 1; i >= 0; i--) {
-      if (opens[i] != null && !isNaN(opens[i])) {
-        todayOpen = opens[i];
-        // Previous candle's close = yesterday's close (used for Δ)
-        if (i > 0 && closes[i - 1] != null) prevClose = closes[i - 1];
-        break;
-      }
-    }
-
-    // Fallback: meta.regularMarketOpen if candle array is empty
-    if (todayOpen == null) {
-      const meta = result.meta;
-      todayOpen = meta.regularMarketOpen ?? meta.regularMarketPrice ?? meta.previousClose;
-      prevClose = meta.previousClose ?? todayOpen;
-    }
-    if (!todayOpen || isNaN(todayOpen)) throw new Error('no open price');
-
-    const chgRaw = prevClose ? (todayOpen - prevClose) : 0;
-    const chgS   = (chgRaw >= 0 ? '+' : '') + chgRaw.toFixed(2);
-    const pct    = prevClose ? ((chgRaw / prevClose) * 100).toFixed(2) : '0.00';
-    const pctS   = (chgRaw >= 0 ? '+' : '') + pct + '%';
-    const fmt    = v => v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-
-    // Only set if auto (not user-overridden)
-    if (meanInp.value === '' || meanInp.dataset.auto === '1' || meanInp.dataset.auto === 'gold') {
-      meanInp.value = Math.round(todayOpen);
-      meanInp.dataset.auto = 'gold';
-      state.mean = Math.round(todayOpen);
-
-      document.getElementById('mean-lbl').textContent =
-        'GC=F 1D open: ' + fmt(todayOpen) + '  Δ: ' + chgS + ' (' + pctS + ')';
-      document.getElementById('gold-price-badge').textContent = 'Open ' + fmt(todayOpen);
-      document.getElementById('gold-price-badge').style.color = chgRaw >= 0
-        ? 'var(--oi-call)' : 'var(--danger)';
-      goldPriceFetched = true;
-      setStatus('✓ GC=F loaded · source: Yahoo Finance (allorigins proxy)', 'var(--fg2)');
-      setTimeout(() => setStatus(''), 8000);
-
-      // If liveData doesn't have a future yet, use gold open for slider too
-      const slider = document.getElementById('inp-vol-price');
-      if (slider.dataset.init !== '1') {
-        slider.min   = Math.floor(todayOpen - 400);
-        slider.max   = Math.ceil(todayOpen + 400);
-        slider.value = todayOpen;
-        document.getElementById('vol-price-display').textContent = snapToGrid(todayOpen).toLocaleString();
-      }
-      render();
-      updateGauge();
-    }
-  } catch(e) {
-    console.warn('Gold price fetch failed:', e.message);
-    setStatus('⚠ GC=F fetch failed — enter mean manually', 'var(--danger)');
+  // Show cached value immediately while live fetch runs in background
+  const hasCached = loadGoldCache();
+  if (hasCached) {
+    setStatus('↻ Refreshing live price…');
+  } else {
+    setStatus('⏳ Fetching GC=F…');
   }
+
+  const YF_PATH = '/v8/finance/chart/GC%3DF?interval=1d&range=5d';
+
+  for (let pi = 0; pi < CORS_PROXIES.length; pi++) {
+    for (let hi = 0; hi < YF_HOSTS.length; hi++) {
+      const yfUrl    = YF_HOSTS[hi] + YF_PATH;
+      const proxyUrl = CORS_PROXIES[pi](yfUrl);
+      const label    = `proxy ${pi+1}/${CORS_PROXIES.length}, host ${hi+1}/${YF_HOSTS.length}`;
+      setStatus(`⏳ Trying ${label}…`);
+      try {
+        const res = await fetchWithTimeout(proxyUrl, 5000);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const text = await res.text();
+
+        // allorigins wraps in {contents:"..."}, others return raw JSON
+        let data;
+        try {
+          const wrapper = JSON.parse(text);
+          data = wrapper.contents ? JSON.parse(wrapper.contents) : wrapper;
+        } catch(e) { throw new Error('parse error'); }
+
+        const { todayOpen, prevClose } = extractPrices(data);
+
+        // Success!
+        goldPriceFetched = true;
+        saveGoldCache(todayOpen, prevClose);
+        applyGoldPrice(todayOpen, prevClose, 'GC=F live');
+        setStatus('✓ GC=F loaded live · ' + label.replace('proxy ','p').replace(', host ','/h'), 'var(--fg2)');
+        setTimeout(() => setStatus(''), 8000);
+        return; // done — no need to try more proxies
+
+      } catch(e) {
+        console.warn(`Gold fetch failed (${label}):`, e.message);
+        // continue to next combination
+      }
+    }
+  }
+
+  // All proxies exhausted
+  if (hasCached) {
+    setStatus('⚠ Live fetch failed — showing cached price', 'var(--fg2)');
+    setTimeout(() => setStatus(''), 6000);
+  } else {
+    setStatus('⚠ All sources failed — enter mean manually', 'var(--danger)');
+  }
+  goldPriceFetched = hasCached;
 }
 
 /* ================================================================
   BOOT
 ================================================================ */
 initGaugeBands();
-fetchGoldPrice();   // fetch GC=F first so mean is populated immediately
+fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 scheduleRefresh();
 render();
