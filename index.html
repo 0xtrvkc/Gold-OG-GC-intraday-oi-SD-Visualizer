@@ -868,7 +868,7 @@ footer {
 ================================================================ */
 const CFG = {
   SVG_W: 800, SVG_H: 300,
-  PAD_LEFT: 16, PAD_RIGHT: 16, PAD_TOP: 22, PAD_BOTTOM: 38,
+  PAD_LEFT: 16, PAD_RIGHT: 16, PAD_TOP: 22, PAD_BOTTOM: 8,
   X_HALF: 200, CURVE_PTS: 300,
   DOT_STEP: 5, DOT_MAJOR: 25,
   BAR_MAX_FRAC: 0.42,
@@ -1269,14 +1269,14 @@ function drawMarkers(c, mean, sd) {
       if (dx<c.xMin||dx>c.xMax) continue;
       const sx=c.toSvgX(dx);
       g.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:col,'stroke-width':'0.75'}));
-      const t=el('text',{x:sx,y:c.plotB+13,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:col,'font-weight':'500'});
+      const t=el('text',{x:sx,y:c.plotT+12,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:col,'font-weight':'500'});
       t.textContent=(side>0?'+':'')+(side*zone.mult)+'σ'; g.appendChild(t);
     }
   }
   const mx=c.toSvgX(mean);
   const muCol = tc('#1a1410','#ffffff');
   g.appendChild(el('line',{x1:mx,y1:c.plotT,x2:mx,y2:c.plotB,stroke:muCol,'stroke-width':'1'}));
-  const mu=el('text',{x:mx,y:c.plotB+13,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:muCol,'font-weight':'600'});
+  const mu=el('text',{x:mx,y:c.plotT+12,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:muCol,'font-weight':'600'});
   mu.textContent='μ'; g.appendChild(mu);
 }
 
