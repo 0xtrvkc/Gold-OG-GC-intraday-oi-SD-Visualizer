@@ -758,6 +758,10 @@ footer {
     <span class="zoom-level" id="zoom-label">2×</span>
     <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
     <button id="btn-bar-stack" class="toggle-btn active" onclick="toggleBarStack()" style="margin-left:auto">▤ Stacked</button>
+    <span style="display:inline-block;width:1px;height:14px;background:var(--line2);margin:0 4px;vertical-align:middle;"></span>
+    <button id="btn-view-both"      class="toggle-btn active" onclick="setChartView('both')"      title="Show both Intraday &amp; OI bars">◈ Both</button>
+    <button id="btn-view-intraday"  class="toggle-btn"        onclick="setChartView('intraday')"  title="Show Intraday volume only">◧ Intraday</button>
+    <button id="btn-view-oi"        class="toggle-btn"        onclick="setChartView('oi')"         title="Show Open Interest only">◨ OI</button>
   </div>
 
   <!-- CHART + SIDEBAR -->
@@ -893,6 +897,7 @@ const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIDa
 let state = { mean: 4500, sd: 0, zoom: 2.0, panOffset: 0 };
 let volZoneVisible = false;
 let barStackMode   = true;   // true = stacked, false = side-by-side
+let chartView      = 'both'; // 'both' | 'intraday' | 'oi'
 let computedSd = null;
 let liveData   = null;
 let oiData     = null;
@@ -1519,6 +1524,25 @@ document.getElementById('chart').addEventListener('touchmove',e=>{
 document.getElementById('chart').addEventListener('touchend',()=>{ touchState=null; });
 
 /* ================================================================
+  CHART VIEW TOGGLE  (Both / Intraday only / OI only)
+================================================================ */
+function setChartView(mode) {
+  chartView = mode;
+  // Update all three buttons
+  const ids = { both: 'btn-view-both', intraday: 'btn-view-intraday', oi: 'btn-view-oi' };
+  const labels = { both: '◈ Both', intraday: '◧ Intraday', oi: '◨ OI' };
+  for (const [key, id] of Object.entries(ids)) {
+    const btn = document.getElementById(id);
+    if (key === mode) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  }
+  render();
+}
+
+/* ================================================================
   BAR STACK TOGGLE
 ================================================================ */
 function toggleBarStack() {
@@ -1691,8 +1715,11 @@ function render() {
   if (volZoneVisible) drawVolZone(c); else clearG('g-volzone');
   drawFutureLine(c);
   drawDotGrid(c,mean,sd);
-  drawBars(c,liveData?liveData.rows:null);
-  drawOIBars(c,oiData?oiData.rows:null);
+  drawBars(c, chartView !== 'oi'      ? (liveData ? liveData.rows : null) : null);
+  drawOIBars(c, chartView !== 'intraday' ? (oiData   ? oiData.rows   : null) : null);
+  // When a layer is hidden, clear its SVG group explicitly
+  if (chartView === 'oi')       { clearG('g-bars'); clearG('g-hitzones'); }
+  if (chartView === 'intraday') { clearG('g-oibars'); }
   drawVolCurve(c,liveData?liveData.rows:null);
   drawCurve(c,mean,sd);
   drawMarkers(c,mean,sd);
