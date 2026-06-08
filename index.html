@@ -702,7 +702,7 @@ footer {
     <div class="input-group">
       <div class="input-label">Std Dev (σ)</div>
       <div class="input-sub" id="sd-formula-lbl">IV × Mean × √(DTE/365)</div>
-      <input type="number" id="inp-sd" value="50" placeholder="auto" step="0.1" min="0.1">
+      <input type="number" id="inp-sd" value="" placeholder="auto" step="0.1" min="0.1" data-auto="1">
     </div>
 
     <div class="input-group">
@@ -890,7 +890,7 @@ const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIDa
 /* ================================================================
   STATE
 ================================================================ */
-let state = { mean: 4500, sd: 50, zoom: 2.0, panOffset: 0 };
+let state = { mean: 4500, sd: 0, zoom: 2.0, panOffset: 0 };
 let volZoneVisible = false;
 let barStackMode   = true;   // true = stacked, false = side-by-side
 let computedSd = null;
@@ -1069,11 +1069,13 @@ function drawFutureLine(c) {
     gLine.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:tc('#6a5a48','#555555'),'stroke-width':'1','stroke-dasharray':'4,3'}));
     const t = el('text',{x:sx+4,y:c.plotT+22,'font-size':'8','font-family':'IBM Plex Mono,monospace',fill:tc('#6a5a48','#666666'),'font-weight':'500'});
     t.textContent = fx.toLocaleString(); gLine.appendChild(t);
-    // IV at future price — shown on the line below
-    if (!isNaN(iv) && iv > 0) {
-      const ivT = el('text',{x:sx+4, y:c.plotT+32, 'font-size':'7.5', 'font-family':'IBM Plex Mono,monospace',
+    // Std Dev σ at future price — computed using IV at future price and mean input box value
+    if (!isNaN(iv) && iv > 0 && !isNaN(dte) && dte > 0) {
+      const meanForLabel = state.mean > 0 ? state.mean : fx;
+      const sdAtFut = meanForLabel * (iv / 100) * Math.sqrt(dte / 365);
+      const sdT = el('text',{x:sx+4, y:c.plotT+32, 'font-size':'7.5', 'font-family':'IBM Plex Mono,monospace',
         fill:tc('#8a7a6a','#888888'), 'font-weight':'400'});
-      ivT.textContent = 'IV ' + iv.toFixed(1) + '%'; gLine.appendChild(ivT);
+      sdT.textContent = 'σ ' + sdAtFut.toFixed(1); gLine.appendChild(sdT);
     }
   }
 }
@@ -1741,7 +1743,9 @@ async function fetchData() {
       // Fallback to global vol if smile interpolation failed
       if (isNaN(ivAtFut)) ivAtFut = parseFloat(liveData.vol);
       if (!isNaN(ivAtFut)&&!isNaN(dte)&&dte>0&&ivAtFut>0) {
-        computedSd=fut*(ivAtFut/100)*Math.sqrt(dte/365);
+        // Use mean input box value (state.mean) as the mean in the formula
+        const meanForSd = state.mean > 0 ? state.mean : fut;
+        computedSd=meanForSd*(ivAtFut/100)*Math.sqrt(dte/365);
         const sdInp=document.getElementById('inp-sd');
         if (sdInp.value===''||sdInp.dataset.auto==='1') {
           sdInp.value=computedSd.toFixed(1);
@@ -1813,7 +1817,35 @@ document.getElementById('inp-vol-price').addEventListener('input',function(){
 ================================================================ */
 document.getElementById('inp-mean').addEventListener('input',function(){
   const v=parseFloat(this.value);
-  if (!isNaN(v)) { state.mean=v; this.dataset.auto=''; document.getElementById('btn-mean-reset').style.display='inline-block'; render(); }
+  if (!isNaN(v)) {
+    state.mean=v;
+    this.dataset.auto='';
+    document.getElementById('btn-mean-reset').style.display='inline-block';
+    // Recompute SD if it's in auto mode, using updated mean
+    const sdInp = document.getElementById('inp-sd');
+    if (sdInp.dataset.auto==='1' && liveData && liveData.dte) {
+      const dte = parseFloat(liveData.dte);
+      const fut = liveData.future;
+      let ivAtFut = NaN;
+      if (liveData.rows) {
+        const vrows = liveData.rows.filter(r=>r.vol!=null&&r.vol>0);
+        const below = vrows.filter(r=>r.strike<=fut).slice(-1)[0];
+        const above = vrows.filter(r=>r.strike>=fut)[0];
+        if (below && above) {
+          const t2 = below.strike===above.strike ? 0 : (fut-below.strike)/(above.strike-below.strike);
+          ivAtFut = (below.vol + t2*(above.vol-below.vol))*100;
+        }
+      }
+      if (isNaN(ivAtFut)) ivAtFut = parseFloat(liveData.vol);
+      if (!isNaN(ivAtFut) && !isNaN(dte) && dte>0 && ivAtFut>0 && v>0) {
+        computedSd = v*(ivAtFut/100)*Math.sqrt(dte/365);
+        sdInp.value = computedSd.toFixed(1);
+        state.sd = computedSd;
+        document.getElementById('sd-formula-lbl').textContent=`IV@fut:${ivAtFut.toFixed(1)}% DTE:${dte} → σ=${computedSd.toFixed(0)}`;
+      }
+    }
+    render();
+  }
 });
 document.getElementById('inp-sd').addEventListener('input',function(){
   const v=parseFloat(this.value);
