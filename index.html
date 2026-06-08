@@ -680,6 +680,7 @@ footer {
         <button class="btn" id="btn-theme" onclick="toggleTheme()" title="Toggle light/dark">◑</button>
       </div>
       <div class="countdown" id="countdown">Next refresh in —</div>
+      <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;line-height:1.4;">⏳ Fetching GC=F…</div>
     </div>
   </header>
 
@@ -696,7 +697,6 @@ footer {
         <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()" style="display:none">↺ reset</button>
         <span id="gold-price-badge" style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;"></span>
       </div>
-      <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;margin-top:3px;line-height:1.4;">⏳ Fetching GC=F…</div>
     </div>
 
     <div class="input-group">
@@ -2114,8 +2114,7 @@ async function fetchGoldPrice() {
         goldPriceFetched = true;
         saveGoldCache(todayOpen, prevClose);
         applyGoldPrice(todayOpen, prevClose, 'GC=F live');
-        setStatus('✓ GC=F loaded live · ' + label.replace('proxy ','p').replace(', host ','/h'), 'var(--fg2)');
-        setTimeout(() => setStatus(''), 8000);
+        setStatus('✓ GC=F live · ' + label.replace('proxy ','p').replace(', host ','/h'), 'var(--fg2)');
         return; // done — no need to try more proxies
 
       } catch(e) {
@@ -2127,8 +2126,7 @@ async function fetchGoldPrice() {
 
   // All proxies exhausted
   if (hasCached) {
-    setStatus('⚠ Live fetch failed — showing cached price', 'var(--fg2)');
-    setTimeout(() => setStatus(''), 6000);
+    setStatus('⚠ Live fetch failed · cached price shown', 'var(--fg2)');
   } else {
     setStatus('⚠ All sources failed — enter mean manually', 'var(--danger)');
   }
