@@ -1354,6 +1354,20 @@ function drawMarkers(c, mean, sd) {
 }
 
 /* ================================================================
+  SVG SCALE CACHE  — measured once, updated only on resize
+  Avoids forced reflow inside render() on every tick.
+================================================================ */
+let _svgScale = null;
+function getSvgScale() {
+  if (_svgScale === null) {
+    const w = document.getElementById('chart').getBoundingClientRect().width;
+    _svgScale = w > 0 ? w / CFG.SVG_W : 1;
+  }
+  return _svgScale;
+}
+window.addEventListener('resize', () => { _svgScale = null; render(); });
+
+/* ================================================================
   X-AXIS LABELS
 ================================================================ */
 function drawXAxis(mean, sd) {
@@ -1364,12 +1378,8 @@ function drawXAxis(mean, sd) {
   for (let v=first;v<=c.xMax+0.001;v+=25) ticks.push(v);
   const skip=Math.max(1,Math.ceil(ticks.length/17));
 
-  // Get the SVG element's actual rendered width so we can map SVG coords → CSS pixels
-  const svg = document.getElementById('chart');
-  const svgRect = svg.getBoundingClientRect();
-  const svgRenderedW = svgRect.width;
-  // SVG viewBox width is CFG.SVG_W=800, so scale factor:
-  const svgScale = svgRenderedW / CFG.SVG_W;
+  // Use cached scale — no getBoundingClientRect() during render
+  const svgScale = getSvgScale();
 
   ticks.forEach((val,i)=>{
     if (i%skip!==0 && i!==ticks.length-1) return;
@@ -1704,9 +1714,17 @@ function updateGauge() {
 }
 
 /* ================================================================
-  RENDER
+  RENDER  — debounced via requestAnimationFrame so multiple rapid
+  callers (applyGoldPrice + fetchData firing in the same tick)
+  collapse into a single paint, eliminating the twitch.
 ================================================================ */
+let _renderPending = false;
 function render() {
+  if (_renderPending) return;
+  _renderPending = true;
+  requestAnimationFrame(() => { _renderPending = false; _render(); });
+}
+function _render() {
   const mean=state.mean;
   const sd=state.sd>0?state.sd:75;
   const c=makeCoords(mean,sd);
