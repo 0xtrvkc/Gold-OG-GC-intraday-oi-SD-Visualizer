@@ -690,9 +690,12 @@ footer {
   <div class="input-panel">
     <div class="input-group">
       <div class="input-label">Mean (μ)</div>
-      <div class="input-sub" id="mean-lbl">Auto = Future price</div>
-      <input type="number" id="inp-mean" value="" placeholder="loading…" step="1">
-      <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()">↺ reset to future</button>
+      <div class="input-sub" id="mean-lbl">Auto = GC=F gold futures</div>
+      <input type="number" id="inp-mean" value="" placeholder="fetching GC=F…" step="1">
+      <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+        <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()" style="display:none">↺ reset</button>
+        <span id="gold-price-badge" style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;"></span>
+      </div>
     </div>
 
     <div class="input-group">
@@ -1544,7 +1547,7 @@ function updateGauge() {
                      (clamped === 4 && hi === 4) ||
                      (clamped === -4 && lo === -4);
     if (isActive) {
-      band.style.filter = 'brightness(0.72) saturate(100)';
+      band.style.filter = 'brightness(0.72) saturate(3)';
       band.style.opacity = '1';
     } else {
       band.style.filter = '';
@@ -1656,7 +1659,7 @@ async function fetchData() {
         }
       }
     }
-    // Set mean from future
+    // Set mean from future — only if gold price hasn't been set yet
     const meanInp=document.getElementById('inp-mean');
     if (liveData.future!=null && (meanInp.value===''||meanInp.dataset.auto==='1')) {
       meanInp.value=liveData.future;
@@ -1728,15 +1731,23 @@ document.getElementById('inp-vol-val').addEventListener('input',function(){
   this.dataset.auto=''; render();
 });
 document.getElementById('btn-refresh').addEventListener('click',()=>{
+  fetchGoldPrice();
   fetchData();
   resetCountdown(parseInt(document.getElementById('sel-interval').value)/1000);
 });
 function resetMean() {
-  if (liveData&&liveData.future!=null) {
-    state.mean=liveData.future;
-    document.getElementById('inp-mean').value=liveData.future;
-    document.getElementById('inp-mean').dataset.auto='1';
-    document.getElementById('btn-mean-reset').style.display='none';
+  // Prefer gold price; fall back to liveData future
+  const meanInp = document.getElementById('inp-mean');
+  if (goldPriceFetched) {
+    fetchGoldPrice().then(() => {
+      document.getElementById('btn-mean-reset').style.display = 'none';
+    });
+  } else if (liveData && liveData.future != null) {
+    state.mean = liveData.future;
+    meanInp.value = liveData.future;
+    meanInp.dataset.auto = '1';
+    document.getElementById('btn-mean-reset').style.display = 'none';
+    document.getElementById('mean-lbl').textContent = `Future: ${liveData.future.toLocaleString()}  Δ: ${liveData.futChg}`;
     render();
   }
 }
@@ -1756,7 +1767,7 @@ function resetCountdown(sec) {
 function scheduleRefresh() {
   clearInterval(refreshTimer);
   const ms=parseInt(document.getElementById('sel-interval').value);
-  refreshTimer=setInterval(()=>{ fetchData(); resetCountdown(ms/1000); },ms);
+  refreshTimer=setInterval(()=>{ fetchGoldPrice(); fetchData(); resetCountdown(ms/1000); },ms);
   resetCountdown(ms/1000);
 }
 document.getElementById('sel-interval').addEventListener('change',()=>{ scheduleRefresh(); });
@@ -1781,11 +1792,96 @@ function toggleTheme() {
 function tc(light, dark) { return isDark ? dark : light; }
 
 /* ================================================================
+  GOLD FUTURES PRICE (GC=F via Yahoo Finance)
+  Uses allorigins CORS proxy — no API key needed.
+================================================================ */
+let goldPriceFetched = false;
+
+async function fetchGoldPrice() {
+  const meanInp = document.getElementById('inp-mean');
+  // Don't overwrite if the user has manually edited the field
+  if (meanInp.value !== '' && meanInp.dataset.auto !== '1' && meanInp.dataset.auto !== 'gold') return;
+
+  // Use 1d interval/5d range — last candle open = today's 1D session open
+  // This matches the "Open" field on investing.com gold futures 1D chart
+  const YF_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=1d&range=5d';
+  const PROXY  = 'https://api.allorigins.win/get?url=' + encodeURIComponent(YF_URL);
+
+  try {
+    const res     = await fetch(PROXY, { cache: 'no-store' });
+    if (!res.ok) throw new Error('proxy ' + res.status);
+    const wrapper = await res.json();
+    if (!wrapper.contents) throw new Error('empty proxy response');
+    const data    = JSON.parse(wrapper.contents);
+    const result  = data?.chart?.result?.[0];
+    if (!result) throw new Error('no result');
+
+    // Pull today's 1D candle open from the OHLC indicator array
+    const quote      = result.indicators?.quote?.[0];
+    const opens      = quote?.open  ?? [];
+    const closes     = quote?.close ?? [];
+
+    // Walk back from the end to find the most recent candle with a valid open
+    let todayOpen = null, prevClose = null;
+    for (let i = opens.length - 1; i >= 0; i--) {
+      if (opens[i] != null && !isNaN(opens[i])) {
+        todayOpen = opens[i];
+        // Previous candle's close = yesterday's close (used for Δ)
+        if (i > 0 && closes[i - 1] != null) prevClose = closes[i - 1];
+        break;
+      }
+    }
+
+    // Fallback: meta.regularMarketOpen if candle array is empty
+    if (todayOpen == null) {
+      const meta = result.meta;
+      todayOpen = meta.regularMarketOpen ?? meta.regularMarketPrice ?? meta.previousClose;
+      prevClose = meta.previousClose ?? todayOpen;
+    }
+    if (!todayOpen || isNaN(todayOpen)) throw new Error('no open price');
+
+    const chgRaw = prevClose ? (todayOpen - prevClose) : 0;
+    const chgS   = (chgRaw >= 0 ? '+' : '') + chgRaw.toFixed(2);
+    const pct    = prevClose ? ((chgRaw / prevClose) * 100).toFixed(2) : '0.00';
+    const pctS   = (chgRaw >= 0 ? '+' : '') + pct + '%';
+    const fmt    = v => v.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+
+    // Only set if auto (not user-overridden)
+    if (meanInp.value === '' || meanInp.dataset.auto === '1' || meanInp.dataset.auto === 'gold') {
+      meanInp.value = Math.round(todayOpen);
+      meanInp.dataset.auto = 'gold';
+      state.mean = Math.round(todayOpen);
+
+      document.getElementById('mean-lbl').textContent =
+        'GC=F 1D open: ' + fmt(todayOpen) + '  Δ: ' + chgS + ' (' + pctS + ')';
+      document.getElementById('gold-price-badge').textContent = 'Open ' + fmt(todayOpen);
+      document.getElementById('gold-price-badge').style.color = chgRaw >= 0
+        ? 'var(--oi-call)' : 'var(--danger)';
+      goldPriceFetched = true;
+
+      // If liveData doesn't have a future yet, use gold open for slider too
+      const slider = document.getElementById('inp-vol-price');
+      if (slider.dataset.init !== '1') {
+        slider.min   = Math.floor(todayOpen - 400);
+        slider.max   = Math.ceil(todayOpen + 400);
+        slider.value = todayOpen;
+        document.getElementById('vol-price-display').textContent = snapToGrid(todayOpen).toLocaleString();
+      }
+      render();
+      updateGauge();
+    }
+  } catch(e) {
+    console.warn('Gold price fetch failed:', e.message);
+  }
+}
+
+/* ================================================================
   BOOT
 ================================================================ */
+initGaugeBands();
+fetchGoldPrice();   // fetch GC=F first so mean is populated immediately
 fetchData();
 scheduleRefresh();
-initGaugeBands();
 render();
 </script>
 </body>
