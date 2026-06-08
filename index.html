@@ -701,7 +701,7 @@ footer {
 
     <div class="input-group">
       <div class="input-label">Std Dev (σ)</div>
-      <div class="input-sub" id="sd-formula-lbl">IV × Mean × √(DTE/252)</div>
+      <div class="input-sub" id="sd-formula-lbl">IV × Mean × √(DTE/365)</div>
       <input type="number" id="inp-sd" value="50" placeholder="auto" step="0.1" min="0.1">
     </div>
 
@@ -1049,7 +1049,7 @@ function drawFutureLine(c) {
   }
   if (isNaN(iv)) iv = parseFloat(liveData.vol);
   if (!isNaN(iv) && !isNaN(dte) && dte>0 && iv>0) {
-    const futureSd = fx*(iv/100)*Math.sqrt(dte/252);
+    const futureSd = fx*(iv/100)*Math.sqrt(dte/365);
     const zL=Math.max(fx-futureSd,c.xMin), zR=Math.min(fx+futureSd,c.xMax);
     if (zR>zL) {
       gZone.appendChild(el('rect',{x:c.toSvgX(zL),y:c.plotT,width:c.toSvgX(zR)-c.toSvgX(zL),height:c.plotB-c.plotT,fill:tc('rgba(100,80,60,0.04)','rgba(200,200,200,0.04)'),stroke:'none'}));
@@ -1089,7 +1089,7 @@ function drawVolZone(c) {
   if (isNaN(volPct)||volPct<=0) return;
   const dte = liveData ? parseFloat(liveData.dte) : NaN;
   const dteVal = (!isNaN(dte)&&dte>0) ? dte : 1;
-  const sigma = price*(volPct/100)*Math.sqrt(dteVal/252);
+  const sigma = price*(volPct/100)*Math.sqrt(dteVal/365);
   const zL=price-sigma, zR=price+sigma;
   if (zR<c.xMin||zL>c.xMax) return;
   const dL=Math.max(zL,c.xMin), dR=Math.min(zR,c.xMax);
@@ -1653,7 +1653,7 @@ async function fetchData() {
     if (liveData.future!=null && liveData.vol && liveData.dte) {
       const iv=parseFloat(liveData.vol), dte=parseFloat(liveData.dte), fut=liveData.future;
       if (!isNaN(iv)&&!isNaN(dte)&&dte>0) {
-        computedSd=fut*(iv/100)*Math.sqrt(dte/252);
+        computedSd=fut*(iv/100)*Math.sqrt(dte/365);
         const sdInp=document.getElementById('inp-sd');
         if (sdInp.value===''||sdInp.dataset.auto==='1') {
           sdInp.value=computedSd.toFixed(1);
