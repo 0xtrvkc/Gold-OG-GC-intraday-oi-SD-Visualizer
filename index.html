@@ -1544,7 +1544,7 @@ function updateGauge() {
                      (clamped === 4 && hi === 4) ||
                      (clamped === -4 && lo === -4);
     if (isActive) {
-      band.style.filter = 'brightness(0.72) saturate(3)';
+      band.style.filter = 'brightness(0.72) saturate(100)';
       band.style.opacity = '1';
     } else {
       band.style.filter = '';
