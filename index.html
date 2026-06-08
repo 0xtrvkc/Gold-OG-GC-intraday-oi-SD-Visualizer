@@ -715,7 +715,7 @@ footer {
     <div class="input-group" style="grid-column: span 2; min-width: 240px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <div class="input-label">Price — Vol Zone</div>
-        <button id="btn-vol-toggle" class="toggle-btn active" onclick="toggleVolZone()">● On</button>
+        <button id="btn-vol-toggle" class="toggle-btn" onclick="toggleVolZone()">○ Off</button>
       </div>
       <div class="input-sub">Starts at future · snaps to 00/25/50/75</div>
       <div class="vol-slider-row">
@@ -751,7 +751,7 @@ footer {
     <button class="btn-sm" onclick="adjustZoom(2)">+</button>
     <button class="btn-sm" onclick="adjustZoom(0.5)">−</button>
     <button class="btn-sm" onclick="resetZoom()" style="color:var(--fg3)">Reset</button>
-    <span class="zoom-level" id="zoom-label">1×</span>
+    <span class="zoom-level" id="zoom-label">2×</span>
     <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
   </div>
 
@@ -885,8 +885,8 @@ const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIDa
 /* ================================================================
   STATE
 ================================================================ */
-let state = { mean: 4500, sd: 50, zoom: 1.0, panOffset: 0 };
-let volZoneVisible = true;
+let state = { mean: 4500, sd: 50, zoom: 2.0, panOffset: 0 };
+let volZoneVisible = false;
 let computedSd = null;
 let liveData   = null;
 let oiData     = null;
@@ -1290,6 +1290,14 @@ function drawXAxis(mean, sd) {
   const ticks=[];
   for (let v=first;v<=c.xMax+0.001;v+=25) ticks.push(v);
   const skip=Math.max(1,Math.ceil(ticks.length/17));
+
+  // Get the SVG element's actual rendered width so we can map SVG coords → CSS pixels
+  const svg = document.getElementById('chart');
+  const svgRect = svg.getBoundingClientRect();
+  const svgRenderedW = svgRect.width;
+  // SVG viewBox width is CFG.SVG_W=800, so scale factor:
+  const svgScale = svgRenderedW / CFG.SVG_W;
+
   ticks.forEach((val,i)=>{
     if (i%skip!==0 && i!==ticks.length-1) return;
     const sf=Math.abs(val-mean)/sd;
@@ -1304,8 +1312,10 @@ function drawXAxis(mean, sd) {
     }
     const d=document.createElement('div');
     d.className=cls;
-    const frac=(val-c.xMin)/(c.xMax-c.xMin);
-    d.style.cssText=`position:absolute;left:${frac*100}%;transform:translateX(-50%);padding-top:6px;`;
+    // Use the exact same toSvgX as bars, then scale from SVG coords to rendered pixels
+    const svgX = c.toSvgX(val);
+    const pxLeft = svgX * svgScale;
+    d.style.cssText=`position:absolute;left:${pxLeft}px;transform:translateX(-50%);padding-top:6px;`;
     d.innerHTML=val.toLocaleString()+(sub?`<span class="sub">${sub}</span>`:'');
     con.appendChild(d);
   });
@@ -1380,8 +1390,8 @@ function adjustZoom(factor) {
   render();
 }
 function resetZoom() {
-  state.zoom=1.0; state.panOffset=0;
-  document.getElementById('zoom-label').textContent='1×';
+  state.zoom=2.0; state.panOffset=0;
+  document.getElementById('zoom-label').textContent='2×';
   render();
 }
 document.getElementById('chart').addEventListener('wheel',e=>{
@@ -1465,24 +1475,24 @@ function initGaugeBands() {
   // Remove old bands (keep arrow-wrap)
   Array.from(track.querySelectorAll('.sdg-band')).forEach(b=>b.remove());
   const lightBands = [
-    { from: 3, to: 4,  bg: 'rgba(160,140,120,0.08)' },
-    { from: 2, to: 3,  bg: 'rgba(140,120,100,0.14)' },
-    { from: 1, to: 2,  bg: 'rgba(120,100,80,0.10)' },
-    { from: 0, to: 1,  bg: 'rgba(100,80,60,0.07)' },
-    { from:-1, to: 0,  bg: 'rgba(100,80,60,0.07)' },
-    { from:-2, to:-1,  bg: 'rgba(120,100,80,0.10)' },
-    { from:-3, to:-2,  bg: 'rgba(140,120,100,0.14)' },
-    { from:-4, to:-3,  bg: 'rgba(160,140,120,0.08)' },
+    { from: 3, to: 4,  bg: 'rgba(180,100,80,0.10)' },
+    { from: 2, to: 3,  bg: 'rgba(160,110,70,0.16)' },
+    { from: 1, to: 2,  bg: 'rgba(140,120,60,0.13)' },
+    { from: 0, to: 1,  bg: 'rgba(80,140,80,0.10)' },
+    { from:-1, to: 0,  bg: 'rgba(80,140,80,0.10)' },
+    { from:-2, to:-1,  bg: 'rgba(140,120,60,0.13)' },
+    { from:-3, to:-2,  bg: 'rgba(160,110,70,0.16)' },
+    { from:-4, to:-3,  bg: 'rgba(180,100,80,0.10)' },
   ];
   const darkBands = [
-    { from: 3, to: 4,  bg: 'rgba(80,80,80,0.12)' },
-    { from: 2, to: 3,  bg: 'rgba(70,70,70,0.22)' },
-    { from: 1, to: 2,  bg: 'rgba(100,100,100,0.18)' },
-    { from: 0, to: 1,  bg: 'rgba(130,130,130,0.15)' },
-    { from:-1, to: 0,  bg: 'rgba(130,130,130,0.15)' },
-    { from:-2, to:-1,  bg: 'rgba(100,100,100,0.18)' },
-    { from:-3, to:-2,  bg: 'rgba(70,70,70,0.22)' },
-    { from:-4, to:-3,  bg: 'rgba(80,80,80,0.12)' },
+    { from: 3, to: 4,  bg: 'rgba(160,60,40,0.18)' },
+    { from: 2, to: 3,  bg: 'rgba(140,80,30,0.28)' },
+    { from: 1, to: 2,  bg: 'rgba(120,120,30,0.22)' },
+    { from: 0, to: 1,  bg: 'rgba(40,120,60,0.20)' },
+    { from:-1, to: 0,  bg: 'rgba(40,120,60,0.20)' },
+    { from:-2, to:-1,  bg: 'rgba(120,120,30,0.22)' },
+    { from:-3, to:-2,  bg: 'rgba(140,80,30,0.28)' },
+    { from:-4, to:-3,  bg: 'rgba(160,60,40,0.18)' },
   ];
   const bandDefs = isDark ? darkBands : lightBands;
   // sigma range rendered: -4 to +4 (clamped visually), total = 8 sigma units
@@ -1492,7 +1502,9 @@ function initGaugeBands() {
     const heightPct = ((b.to - b.from) / RANGE) * 100;
     const div = document.createElement('div');
     div.className = 'sdg-band';
-    div.style.cssText = `top:${topPct}%;height:${heightPct}%;background:${b.bg};`;
+    div.dataset.from = b.from;
+    div.dataset.to   = b.to;
+    div.style.cssText = `top:${topPct}%;height:${heightPct}%;background:${b.bg};transition:filter 0.3s,opacity 0.3s;`;
     // thin separator lines at exact sigma multiples
     if ([-3,-2,-1,0,1,2,3].includes(b.from)) {
       div.style.borderTop = `1px solid ${tc('rgba(26,20,14,0.08)','rgba(255,255,255,0.07)')}`;
@@ -1518,6 +1530,27 @@ function updateGauge() {
 
   const arrow = document.getElementById('sdg-arrow-wrap');
   if (arrow) arrow.style.top = topPct + '%';
+
+  // Highlight the active band — find which sigma zone the arrow is in
+  // Zone boundaries: ±4→±3, ±3→±2, ±2→±1, ±1→0, 0→±1 ...
+  // Each .sdg-band has data-from / data-to attributes set by initGaugeBands
+  const allBands = document.querySelectorAll('.sdg-band');
+  allBands.forEach(band => {
+    const bFrom = parseFloat(band.dataset.from);
+    const bTo   = parseFloat(band.dataset.to);
+    const lo = Math.min(bFrom, bTo);
+    const hi = Math.max(bFrom, bTo);
+    const isActive = (clamped >= lo && clamped < hi) ||
+                     (clamped === 4 && hi === 4) ||
+                     (clamped === -4 && lo === -4);
+    if (isActive) {
+      band.style.filter = 'brightness(0.72) saturate(3)';
+      band.style.opacity = '1';
+    } else {
+      band.style.filter = '';
+      band.style.opacity = '0.55';
+    }
+  });
 
   // Zone name + pct within zone
   const absS   = Math.abs(sigmaPos);
