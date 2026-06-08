@@ -3,273 +3,707 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Standard Deviation Visualizer</title>
-<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<title>SD Visualizer · GC Intraday</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:         #000000;
-  --fg:         #ffffff;
-  --input-bg:   #111111;
-  --border-col: #ffffff;
-  --zone1-fill: rgba(220, 38,  38,  0.08);
-  --zone2-fill: rgba(234, 130, 18,  0.08);
-  --zone3-fill: rgba(234, 212, 18,  0.08);
-  --zone1-line: #ff4444;
-  --zone2-line: #ff9900;
-  --zone3-line: #ffdd00;
-  --call-fill:  rgba(59, 130, 246, 0.75);
-  --call-line:  #60a5fa;
-  --put-fill:   rgba(250, 204, 21, 0.75);
-  --put-line:   #facc15;
-  --vol-line:   #a78bfa;
-  --font:       'Courier Prime', 'Courier New', monospace;
-  --border:     1px solid var(--border-col);
+  --bg0: #f8f4ee;
+  --bg1: #f2ede5;
+  --bg2: #ebe4d8;
+  --bg3: #e2d9cb;
+  --line: #d8cfc0;
+  --line2: #c8bfb0;
+  --fg0: #1a1714;
+  --fg1: #4a4540;
+  --fg2: #7a7268;
+  --fg3: #a09890;
+  --white: #ffffff;
+  --z1: #2a2420;
+  --z2: #5a5248;
+  --z3: #8a8278;
+  /* OI Puts = mustard yellow */
+  --oi-put: #c9920a;
+  --oi-put-fill: rgba(201,146,10,0.13);
+  /* OI Calls = dark navy blue */
+  --oi-call: #1a3a6b;
+  --oi-call-fill: rgba(26,58,107,0.13);
+  /* Intraday vol bars */
+  --call-fill: rgba(26,58,107,0.12);
+  --call-line: #1a3a6b;
+  --put-fill: rgba(201,146,10,0.10);
+  --put-line: #c9920a;
+  --vol-line: #9a9080;
+  --accent: #1a1714;
+  --danger: #b33;
+  --mono: 'IBM Plex Mono', 'Courier New', monospace;
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: var(--font); background: var(--bg); color: var(--fg); min-height: 100vh; padding: 52px 32px; }
-.container { max-width: 1118px; margin: 0 auto; }
 
-/* HEADER */
+/* ── DARK THEME ── */
+[data-theme="dark"] {
+  --bg0: #0a0a0a;
+  --bg1: #111111;
+  --bg2: #1a1a1a;
+  --bg3: #242424;
+  --line: #2a2a2a;
+  --line2: #383838;
+  --fg0: #f0f0f0;
+  --fg1: #a0a0a0;
+  --fg2: #606060;
+  --fg3: #505050;
+  --vol-line: #707070;
+  --accent: #f0f0f0;
+  --danger: #e05555;
+}
+
+/* dark-specific overrides that can't be done via vars alone */
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] select {
+  background: var(--bg1);
+  color: var(--fg0);
+}
+[data-theme="dark"] .sdg-label.z0 { color: #f0f0f0; }
+[data-theme="dark"] .x-tick.is-mean { color: #f0f0f0; }
+[data-theme="dark"] .x-tick.is-1sd  { color: #d0c8c0; }
+[data-theme="dark"] .x-tick.is-2sd  { color: #908880; }
+[data-theme="dark"] .x-tick.is-3sd  { color: #606060; }
+[data-theme="dark"] .x-tick.is-1sd .sub { color: #d0c8c0; }
+[data-theme="dark"] .x-tick.is-2sd .sub { color: #908880; }
+[data-theme="dark"] .x-tick.is-3sd .sub { color: #606060; }
+[data-theme="dark"] .stat-cell.z1 .stat-val { color: #d0c8c0; }
+[data-theme="dark"] .stat-cell.z2 .stat-val { color: #908880; }
+[data-theme="dark"] .stat-cell.z3 .stat-val { color: #606060; }
+[data-theme="dark"] .sdg-label.m3 { color: #505050; }
+[data-theme="dark"] .sdg-label.m2 { color: #707070; }
+[data-theme="dark"] .sdg-label.m1 { color: #a0a0a0; }
+[data-theme="dark"] .sdg-label.p1 { color: #a0a0a0; }
+[data-theme="dark"] .sdg-label.p2 { color: #707070; }
+[data-theme="dark"] .sdg-label.p3 { color: #505050; }
+[data-theme="dark"] .pulse { background: #48a868; }
+[data-theme="dark"] .sdg-dot { background: #48a868; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--mono);
+  background: var(--bg0);
+  color: var(--fg0);
+  min-height: 100vh;
+  padding: 40px 28px 60px;
+  line-height: 1.5;
+  transition: background 0.25s, color 0.25s;
+}
+
+.page { max-width: 1160px; margin: 0 auto; }
+
+/* ── HEADER ── */
 header {
-  border-bottom: 2px solid var(--fg);
-  padding-bottom: 16px; margin-bottom: 28px;
-  display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line2);
+  margin-bottom: 24px;
 }
-header h1 { font-size: 1.43rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-header p  { font-size: 0.975rem; color: #888; margin-top: 5px; letter-spacing: 0.04em; }
-.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.status-row { display: flex; align-items: center; gap: 10px; font-size: 0.845rem; color: #888; letter-spacing: 0.04em; }
-.pulse { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; animation: blink 1.4s ease-in-out infinite; }
-.pulse.stale { background: #555; animation: none; }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-.btn-refresh {
-  font-family: var(--font); font-size: 0.845rem; font-weight: 700;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 6px 16px; border: var(--border); background: #111;
-  color: #fff; cursor: pointer; transition: background 0.15s;
-}
-.btn-refresh:hover { background: #222; }
-.btn-refresh:active { background: #333; }
-.countdown { font-size: 0.78rem; color: #555; letter-spacing: 0.06em; }
 
-/* INPUT PANEL */
-.input-panel { display: flex; gap: 32px; margin-bottom: 28px; flex-wrap: wrap; align-items: flex-end; }
-.input-group { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 180px; }
-.input-group label { font-size: 0.91rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.input-group small { font-size: 0.845rem; color: #888; letter-spacing: 0.04em; margin-top: -3px; }
+.hdr-left {}
+
+.hdr-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  margin-bottom: 6px;
+}
+
+h1 {
+  font-family: var(--sans);
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--fg0);
+}
+
+.hdr-sub {
+  font-size: 11px;
+  color: var(--fg2);
+  letter-spacing: 0.04em;
+  margin-top: 5px;
+}
+
+.hdr-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--fg2);
+  letter-spacing: 0.04em;
+}
+
+.pulse {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #2a8a4a;
+  flex-shrink: 0;
+  animation: blink 1.6s ease-in-out infinite;
+}
+.pulse.stale { background: var(--fg3); animation: none; }
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+
+.btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 7px 16px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--fg1);
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 2px;
+}
+.btn:hover { border-color: var(--fg2); color: var(--fg0); background: var(--bg2); }
+.btn:active { background: var(--bg3); }
+
+.countdown { font-size: 10px; color: var(--fg3); letter-spacing: 0.06em; }
+
+/* ── INPUT PANEL ── */
+.input-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 16px 24px;
+  margin-bottom: 20px;
+  align-items: end;
+}
+
+.input-group { display: flex; flex-direction: column; gap: 6px; }
+
+.input-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+
+.input-sub {
+  font-size: 10px;
+  color: var(--fg3);
+  letter-spacing: 0.03em;
+  margin-top: -2px;
+}
+
 input[type="number"], select {
-  font-family: var(--font); font-size: 1.2rem; padding: 10px 13px;
-  border: var(--border); background: var(--input-bg); color: var(--fg);
-  outline: none; width: 100%; border-radius: 0; -moz-appearance: textfield;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--line2);
+  background: var(--bg1);
+  color: var(--fg0);
+  outline: none;
+  width: 100%;
+  border-radius: 2px;
+  -moz-appearance: textfield;
+  transition: border-color 0.15s;
 }
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
-input[type="number"]:focus, select:focus { border-color: #fff; box-shadow: 2px 2px 0 #fff; }
-select { cursor: pointer; font-size: 0.91rem; padding: 10px 13px; }
+input[type="number"]:focus, select:focus {
+  border-color: var(--fg2);
+}
+select { cursor: pointer; }
 
-/* STATS BAR */
-.stats-bar { display: flex; gap: 0; border: var(--border); margin-bottom: 28px; font-size: 0.884rem; letter-spacing: 0.04em; flex-wrap: wrap; }
-.stat-cell { flex: 1; padding: 10px 16px; border-right: var(--border); min-width: 100px; }
-.stat-cell:last-child { border-right: none; }
-.stat-cell .label { color: #888; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.08em; }
-.stat-cell .value { font-weight: 700; font-size: 1.05rem; margin-top: 3px; }
-.stat-cell.z1   .value { color: var(--zone1-line); }
-.stat-cell.z2   .value { color: var(--zone2-line); }
-.stat-cell.z3   .value { color: var(--zone3-line); }
-.stat-cell.zmean .value { color: #fff; }
-.stat-cell.scall .value { color: var(--call-line); }
-.stat-cell.sput  .value { color: var(--put-line); }
-.stat-cell.svol  .value { color: #aaa; }
+.btn-reset {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg3);
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  border-radius: 2px;
+  display: none;
+  transition: all 0.15s;
+}
+.btn-reset:hover { color: var(--fg1); border-color: var(--line2); }
 
-/* ZOOM CONTROLS — slider + reset */
-.zoom-bar {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 0;
-  border: var(--border); border-bottom: none;
-  padding: 8px 12px;
-  font-size: 0.8rem; letter-spacing: 0.06em;
+.vol-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.zoom-bar label { color: #555; text-transform: uppercase; flex-shrink: 0; }
-#zoom-slider {
-  flex: 1; accent-color: #fff; cursor: pointer; height: 3px;
+input[type="range"] {
+  flex: 1;
+  accent-color: var(--fg1);
+  cursor: pointer;
+  height: 3px;
 }
-#zoom-display { color: #aaa; min-width: 36px; text-align: right; flex-shrink: 0; font-size: 0.8rem; }
-.btn-zoom-reset {
-  font-family: var(--font); font-size: 0.75rem; padding: 3px 10px;
-  border: 1px solid #444; background: #000; color: #666; cursor: pointer;
-  letter-spacing: 0.06em; flex-shrink: 0;
-}
-.btn-zoom-reset:hover { color: #fff; border-color: #888; }
-
-/* VOL ZONE TOGGLE */
-.vol-toggle {
-  font-family: var(--font); font-size: 0.7rem; font-weight: 700;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 2px 8px; border: 1px solid #ef4444;
-  background: #ef4444; color: #000; cursor: pointer;
-  flex-shrink: 0; transition: background 0.12s, color 0.12s;
-}
-.vol-toggle.off {
-  background: #000; color: #555; border-color: #333;
+.vol-display {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg1);
+  min-width: 50px;
+  text-align: right;
 }
 
-/* CHART */
-.chart-wrapper {
-  border: var(--border); border-bottom: none;
-  background: #000; padding: 0; overflow: hidden; position: relative;
-}
-svg#chart { display: block; width: 100%; height: 442px; cursor: crosshair; }
-
-/* X-AXIS LABELS — flush to chart, no gap */
-.x-axis-labels {
-  border: var(--border); border-top: none; border-bottom: none;
-  background: #000;
-  padding: 6px 0 8px 0;
-  position: relative; height: 38px;
+/* ── STATS BAR ── */
+.stats-bar {
+  display: flex;
+  border: 1px solid var(--line2);
+  margin-bottom: 18px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  flex-wrap: wrap;
+  background: var(--bg1);
+  border-radius: 2px;
   overflow: hidden;
 }
-.x-tick { text-align: center; font-size: 0.78rem; font-family: var(--font); color: #888; letter-spacing: 0.02em; line-height: 1.3; white-space: nowrap; }
-.x-tick.is-mean { font-weight: 700; color: #fff; }
-.x-tick.is-1sd  { color: var(--zone1-line); font-weight: 700; }
-.x-tick.is-2sd  { color: var(--zone2-line); font-weight: 700; }
-.x-tick.is-3sd  { color: var(--zone3-line); font-weight: 700; }
-.x-tick .sub    { display: block; font-size: 0.715rem; color: #666; }
-.x-tick.is-1sd .sub { color: var(--zone1-line); }
-.x-tick.is-2sd .sub { color: var(--zone2-line); }
-.x-tick.is-3sd .sub { color: var(--zone3-line); }
 
-/* PAN SCROLLBAR — below x-axis labels, same border box */
-.pan-bar {
-  border: var(--border); border-top: none;
-  background: #000; padding: 6px 12px 8px;
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 28px;
+.stat-cell {
+  flex: 1;
+  padding: 10px 13px;
+  border-right: 1px solid var(--line);
+  min-width: 90px;
 }
-.pan-bar label { color: #555; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.06em; flex-shrink: 0; }
-#pan-slider {
-  flex: 1; accent-color: #fff; cursor: pointer; height: 3px;
+.stat-cell:last-child { border-right: none; }
+
+.stat-lbl {
+  font-size: 9px;
+  color: var(--fg3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
 }
 
-/* TOOLTIP */
-#tooltip {
-  position: fixed; pointer-events: none; display: none;
-  background: #050505; border: 1px solid #2a2a2a;
-  font-family: var(--font); font-size: 0.82rem;
-  letter-spacing: 0.03em; z-index: 100; white-space: nowrap;
-  min-width: 236px; box-shadow: 0 6px 28px rgba(0,0,0,0.8);
+.stat-val {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--fg0);
 }
-#tt-header {
-  padding: 8px 12px 7px; border-bottom: 1px solid #1a1a1a;
-  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+.stat-cell.z1 .stat-val { color: #2a2420; }
+.stat-cell.z2 .stat-val { color: #5a5248; }
+.stat-cell.z3 .stat-val { color: #8a8278; }
+
+/* ── TOGGLE BUTTON ── */
+.toggle-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--fg2);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-#tt-strike { font-weight: 700; font-size: 1.05rem; color: #fff; }
-#tt-vol    { color: #7c6fcd; font-size: 0.73rem; }
-.tt-block  { padding: 7px 12px; }
-.tt-block + .tt-block { border-top: 1px solid #111; }
-.tt-block-label {
-  font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.14em;
-  color: #3a3a3a; margin-bottom: 5px; font-weight: 700;
+.toggle-btn:hover { border-color: var(--fg2); color: var(--fg0); }
+.toggle-btn.active {
+  background: var(--bg3);
+  border-color: var(--fg2);
+  color: var(--fg0);
+  font-weight: 600;
 }
-.tt-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
-.tt-row:last-child { margin-bottom: 0; }
-.tt-side-label { font-size: 0.7rem; color: #555; width: 30px; flex-shrink: 0; letter-spacing: 0.06em; }
-.tt-count { font-size: 0.9rem; font-weight: 700; min-width: 58px; text-align: right; flex-shrink: 0; }
-.tt-bar-track { flex: 1; height: 5px; background: #111; position: relative; min-width: 50px; border-radius: 1px; }
-.tt-bar-fill  { height: 100%; position: absolute; left: 0; top: 0; border-radius: 1px; }
 
-/* LEGEND */
-.legend { display: flex; gap: 0; border: var(--border); font-size: 0.884rem; margin-bottom: 10px; }
-.legend-item { flex: 1; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-right: var(--border); }
-.legend-item:last-child { border-right: none; }
-.legend-swatch { width: 18px; height: 18px; border: 1px solid #555; flex-shrink: 0; }
-.legend-line { width: 24px; height: 3px; flex-shrink: 0; }
-.legend-text .pct  { font-weight: 700; }
-.legend-text .desc { color: #888; font-size: 0.78rem; display: block; }
-
-/* ERROR */
-.err-banner { display: none; background: #1a0000; border: 1px solid #f87171; color: #f87171; padding: 10px 16px; font-size: 0.845rem; margin-bottom: 20px; letter-spacing: 0.04em; }
-
-footer { font-size: 0.78rem; color: #555; border-top: 1px solid #333; padding-top: 13px; letter-spacing: 0.04em; }
-
-/* SD GAUGE — vertical panel to the right of the chart */
-.chart-row {
+/* ── CHART + SIDEBAR LAYOUT ── */
+.chart-area {
   display: flex;
-  align-items: stretch;
   gap: 0;
+  align-items: stretch;
+  margin-bottom: 0;
 }
-.chart-col {
+
+.chart-area .chart-shell {
   flex: 1;
   min-width: 0;
+  border-radius: 2px 0 0 2px;
+}
+
+/* ── SD GAUGE SIDEBAR ── */
+.sd-gauge-sidebar {
+  width: 130px;
+  flex-shrink: 0;
+  border: 1px solid var(--line2);
+  border-left: none;
+  background: var(--bg1);
+  border-radius: 0 2px 2px 0;
   display: flex;
   flex-direction: column;
-}
-.sd-gauge-wrap {
-  width: 72px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
-#sd-gauge {
-  display: block;
-  width: 72px;
-  height: 442px;
-  border: var(--border);
-  border-left: none;
-  background: #000;
-  flex-shrink: 0;
-}
-.sd-gauge-xaxis {
-  border: var(--border);
-  border-top: none;
-  border-left: none;
-  height: 38px;
-  background: #050505;
-}
-.sd-gauge-pan {
-  border: var(--border);
-  border-top: none;
-  border-left: none;
-  height: 0;
   overflow: hidden;
-  /* same height as pan-bar but invisible — just for alignment */
+  user-select: none;
+}
+
+.sdg-header {
+  padding: 9px 12px 7px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sdg-title {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+
+.sdg-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #2a8a4a;
+  animation: blink 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.sdg-dot.stale { animation: none; background: var(--fg3); }
+
+.sdg-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0 10px;
+  gap: 0;
+  position: relative;
+}
+
+.sdg-track-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 10px 0 8px;
+  position: relative;
+  min-height: 240px;
+}
+
+.sdg-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.sdg-label {
+  font-size: 9px;
+  font-family: var(--mono);
+  text-align: right;
+  padding-right: 6px;
+  line-height: 1;
+  transform: translateY(50%);
+}
+.sdg-label.m3 { color: var(--fg3); }
+.sdg-label.m2 { color: var(--fg2); }
+.sdg-label.m1 { color: var(--fg1); }
+.sdg-label.z0 { color: var(--fg0); font-weight: 600; }
+.sdg-label.p1 { color: var(--fg1); }
+.sdg-label.p2 { color: var(--fg2); }
+.sdg-label.p3 { color: var(--fg3); }
+
+.sdg-track {
+  flex: 1;
+  position: relative;
+  border-radius: 2px;
+  overflow: visible;
+}
+
+/* Zone band segments inside track */
+.sdg-band {
+  position: absolute;
+  left: 0; right: 0;
+  border-radius: 1px;
+}
+
+/* The glowing arrow indicator */
+.sdg-arrow-wrap {
+  position: absolute;
+  left: 0; right: 0;
+  pointer-events: none;
+  transition: top 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.sdg-arrow {
+  position: absolute;
+  left: -6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.sdg-arrow-head {
+  width: 0; height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid #1a3a6b;
+  flex-shrink: 0;
+}
+
+.sdg-arrow-line {
+  height: 1.5px;
+  background: #1a3a6b;
+  flex: 1;
+  opacity: 0.5;
+}
+
+.sdg-info {
+  padding: 10px 12px 8px;
+  border-top: 1px solid var(--line);
+}
+
+.sdg-zone-name {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--fg0);
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+  transition: color 0.3s;
+}
+
+.sdg-zone-pct {
+  font-size: 9px;
+  color: var(--fg3);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.sdg-price-val {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg0);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.sdg-price-chg {
+  font-size: 10px;
+  color: var(--fg2);
+  margin-top: 2px;
+}
+
+/* ── ZOOM ROW ── */
+.zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.zoom-row .lbl { color: var(--fg3); letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+.zoom-row .btn-sm {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 10px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--fg1);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.12s;
+}
+.zoom-row .btn-sm:hover { background: var(--bg2); color: var(--fg0); }
+.zoom-level { color: var(--fg2); font-size: 11px; min-width: 28px; }
+.zoom-hint { color: var(--fg3); font-size: 10px; margin-left: 6px; letter-spacing: 0.03em; }
+
+/* ── CHART ── */
+.chart-shell {
+  border: 1px solid var(--line2);
+  background: var(--bg0);
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px;
+  margin-bottom: 0;
+}
+
+svg#chart {
+  display: block;
+  width: 100%;
+  height: 420px;
+  cursor: grab;
+}
+
+/* ── X-AXIS ── */
+.x-axis {
+  border: 1px solid var(--line2);
+  border-top: none;
+  background: var(--bg1);
+  position: relative;
+  height: 38px;
+  margin-bottom: 18px;
+  overflow: hidden;
+  border-radius: 0 0 2px 2px;
+}
+.x-tick {
+  text-align: center;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--fg3);
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.x-tick.is-mean { color: var(--fg0); font-weight: 600; }
+.x-tick.is-1sd  { color: #3a3028; font-weight: 500; }
+.x-tick.is-2sd  { color: #6a5a48; font-weight: 500; }
+.x-tick.is-3sd  { color: #9a8a78; font-weight: 500; }
+.x-tick .sub    { display: block; font-size: 9px; color: var(--fg3); margin-top: 1px; }
+.x-tick.is-1sd .sub { color: #3a3028; }
+.x-tick.is-2sd .sub { color: #6a5a48; }
+.x-tick.is-3sd .sub { color: #9a8a78; }
+
+/* ── LEGEND ── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--line2);
+  font-size: 11px;
+  margin-bottom: 10px;
+  background: var(--bg1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  border-right: 1px solid var(--line);
+  flex: 1;
+  min-width: 130px;
+}
+.legend-item:last-child { border-right: none; }
+.legend-swatch {
+  width: 14px; height: 14px;
+  border: 1px solid var(--line2);
+  flex-shrink: 0;
+  border-radius: 1px;
+}
+.legend-line { width: 22px; height: 2px; flex-shrink: 0; }
+.legend-name { font-weight: 500; font-size: 11px; color: var(--fg1); }
+.legend-desc { color: var(--fg3); font-size: 10px; display: block; margin-top: 1px; }
+
+/* ── TOOLTIP ── */
+#tooltip {
+  position: fixed;
+  pointer-events: none;
+  display: none;
+  background: var(--bg1);
+  border: 1px solid var(--line2);
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  z-index: 200;
+  white-space: nowrap;
+  min-width: 190px;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+}
+#tt-strike {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg0);
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+#tt-vol { color: var(--fg2); font-size: 10px; margin-bottom: 8px; }
+#tt-bars { display: flex; flex-direction: column; gap: 5px; }
+.tt-row { display: flex; flex-direction: column; gap: 2px; }
+.tt-row-label { font-size: 9px; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.1em; }
+.tt-bar-line { display: flex; align-items: center; gap: 7px; }
+.tt-bar-track { flex: 1; height: 6px; background: var(--bg3); position: relative; min-width: 80px; border-radius: 1px; }
+.tt-bar-fill { height: 100%; position: absolute; left: 0; top: 0; border-radius: 1px; }
+.tt-bar-val { font-size: 11px; font-weight: 500; min-width: 38px; text-align: right; }
+.tt-bar-lbl { font-size: 10px; min-width: 30px; color: var(--fg3); }
+
+/* ── ERROR ── */
+.err-banner {
+  display: none;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  color: var(--fg1);
+  padding: 10px 14px;
+  font-size: 11px;
+  margin-bottom: 18px;
+  border-radius: 2px;
+  letter-spacing: 0.03em;
+}
+
+/* ── FOOTER ── */
+footer {
+  font-size: 10px;
+  color: var(--fg3);
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  letter-spacing: 0.04em;
 }
 </style>
 </head>
 <body>
-<div class="container">
+<div class="page">
 
+  <!-- HEADER -->
   <header>
-    <div>
+    <div class="hdr-left">
+      <div class="hdr-eyebrow">Gold Futures · GC · Intraday</div>
       <h1 id="h-title">Standard Deviation Visualizer</h1>
-      <p id="h-sub">Normal distribution · Bell curve · ±3σ zones · Intraday volume overlay</p>
+      <p class="hdr-sub" id="h-sub">Normal distribution &nbsp;·&nbsp; ±3σ zones &nbsp;·&nbsp; Intraday volume &amp; OI overlay</p>
     </div>
-    <div class="header-right">
+    <div class="hdr-right">
       <div class="status-row">
         <div class="pulse" id="pulse-dot"></div>
         <span id="status-txt">Loading…</span>
-        <button class="btn-refresh" id="btn-refresh">↺ Refresh</button>
+        <button class="btn" id="btn-refresh">↺ Refresh</button>
+        <button class="btn" id="btn-theme" onclick="toggleTheme()" title="Toggle light/dark">◑</button>
       </div>
       <div class="countdown" id="countdown">Next refresh in —</div>
     </div>
   </header>
 
+  <!-- ERROR -->
   <div class="err-banner" id="err-banner"></div>
 
+  <!-- INPUTS -->
   <div class="input-panel">
     <div class="input-group">
-      <label for="inp-mean">Mean (μ)</label>
-      <small id="mean-lbl">Auto = Future price · type to override</small>
+      <div class="input-label">Mean (μ)</div>
+      <div class="input-sub" id="mean-lbl">Auto = Future price</div>
       <input type="number" id="inp-mean" value="" placeholder="loading…" step="1">
-      <button id="btn-mean-reset" style="font-family:var(--font);font-size:0.75rem;padding:4px 10px;border:1px solid #444;background:#000;color:#666;cursor:pointer;letter-spacing:0.06em;display:none;" onclick="resetMean()">↺ reset to future</button>
+      <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()">↺ reset to future</button>
     </div>
+
     <div class="input-group">
-      <label for="inp-sd">Std Dev (σ)</label>
-      <small id="sd-formula-lbl">IV × Mean × √(DTE/252)</small>
+      <div class="input-label">Std Dev (σ)</div>
+      <div class="input-sub" id="sd-formula-lbl">IV × Mean × √(DTE/252)</div>
       <input type="number" id="inp-sd" value="50" placeholder="auto" step="0.1" min="0.1">
     </div>
+
     <div class="input-group">
-      <label for="sel-interval">Auto-Refresh</label>
-      <small>Fetch interval</small>
+      <div class="input-label">Auto-Refresh</div>
+      <div class="input-sub">Fetch interval</div>
       <select id="sel-interval">
         <option value="10000">10 s</option>
         <option value="30000" selected>30 s</option>
@@ -277,685 +711,610 @@ footer { font-size: 0.78rem; color: #555; border-top: 1px solid #333; padding-to
         <option value="300000">5 min</option>
       </select>
     </div>
-    <div class="input-group" style="min-width:260px;flex:2;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <label for="inp-vol-price" style="flex:1;">Price — Vol Zone</label>
-        <button id="btn-vol-toggle" class="vol-toggle" onclick="toggleVolZone()">ON</button>
+
+    <div class="input-group" style="grid-column: span 2; min-width: 240px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div class="input-label">Price — Vol Zone</div>
+        <button id="btn-vol-toggle" class="toggle-btn active" onclick="toggleVolZone()">● On</button>
       </div>
-      <small>Starts at future price · snaps to 00/25/50/75</small>
-      <div id="vol-zone-controls">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <input type="range" id="inp-vol-price"
-            min="0" max="9999" step="5"
-            value="0"
-            style="flex:1;accent-color:#ef4444;cursor:pointer;height:4px;">
-          <span id="vol-price-display" style="font-family:var(--font);font-size:1rem;font-weight:700;color:#ef4444;min-width:48px;text-align:right;">—</span>
-        </div>
+      <div class="input-sub">Starts at future · snaps to 00/25/50/75</div>
+      <div class="vol-slider-row">
+        <input type="range" id="inp-vol-price" min="0" max="9999" step="5" value="0">
+        <span id="vol-price-display" class="vol-display">—</span>
       </div>
     </div>
+
     <div class="input-group">
-      <label for="inp-vol-val">Vol at Price (%)</label>
-      <small>Auto from smile · edit to override</small>
+      <div class="input-label">Vol at Price (%)</div>
+      <div class="input-sub">Auto from smile · edit to override</div>
       <input type="number" id="inp-vol-val" value="" placeholder="auto" step="0.01" min="0">
     </div>
   </div>
 
+  <!-- STATS BAR -->
   <div class="stats-bar">
-    <div class="stat-cell z3"><div class="label">μ − 3σ</div><div class="value" id="val-m3">—</div></div>
-    <div class="stat-cell z2"><div class="label">μ − 2σ</div><div class="value" id="val-m2">—</div></div>
-    <div class="stat-cell z1"><div class="label">μ − 1σ</div><div class="value" id="val-m1">—</div></div>
-    <div class="stat-cell zmean"><div class="label">μ (Mean)</div><div class="value" id="val-mean">—</div></div>
-    <div class="stat-cell z1"><div class="label">μ + 1σ</div><div class="value" id="val-p1">—</div></div>
-    <div class="stat-cell z2"><div class="label">μ + 2σ</div><div class="value" id="val-p2">—</div></div>
-    <div class="stat-cell z3"><div class="label">μ + 3σ</div><div class="value" id="val-p3">—</div></div>
-    <div class="stat-cell scall"><div class="label">Total Calls</div><div class="value" id="val-calls">—</div></div>
-    <div class="stat-cell sput"><div class="label">Total Puts</div><div class="value" id="val-puts">—</div></div>
-    <div class="stat-cell svol"><div class="label">IV / Fut Chg</div><div class="value" id="val-vol">—</div></div>
+    <div class="stat-cell z3"><div class="stat-lbl">μ − 3σ</div><div class="stat-val" id="val-m3">—</div></div>
+    <div class="stat-cell z2"><div class="stat-lbl">μ − 2σ</div><div class="stat-val" id="val-m2">—</div></div>
+    <div class="stat-cell z1"><div class="stat-lbl">μ − 1σ</div><div class="stat-val" id="val-m1">—</div></div>
+    <div class="stat-cell">   <div class="stat-lbl">μ (Mean)</div><div class="stat-val" id="val-mean">—</div></div>
+    <div class="stat-cell z1"><div class="stat-lbl">μ + 1σ</div><div class="stat-val" id="val-p1">—</div></div>
+    <div class="stat-cell z2"><div class="stat-lbl">μ + 2σ</div><div class="stat-val" id="val-p2">—</div></div>
+    <div class="stat-cell z3"><div class="stat-lbl">μ + 3σ</div><div class="stat-val" id="val-p3">—</div></div>
+    <div class="stat-cell">   <div class="stat-lbl">Total Calls</div><div class="stat-val" id="val-calls">—</div></div>
+    <div class="stat-cell">   <div class="stat-lbl">Total Puts</div><div class="stat-val" id="val-puts">—</div></div>
+    <div class="stat-cell">   <div class="stat-lbl">IV / Fut Δ</div><div class="stat-val" id="val-vol">—</div></div>
   </div>
 
-  <!-- ZOOM slider replaces +/- buttons and scroll-wheel zoom -->
-  <div class="zoom-bar">
-    <label for="zoom-slider">Zoom</label>
-    <input type="range" id="zoom-slider" min="0" max="100" step="1" value="50">
-    <span id="zoom-display">1×</span>
-    <button class="btn-zoom-reset" onclick="resetZoom()">Reset</button>
+  <!-- ZOOM ROW -->
+  <div class="zoom-row">
+    <span class="lbl">Zoom</span>
+    <button class="btn-sm" onclick="adjustZoom(2)">+</button>
+    <button class="btn-sm" onclick="adjustZoom(0.5)">−</button>
+    <button class="btn-sm" onclick="resetZoom()" style="color:var(--fg3)">Reset</button>
+    <span class="zoom-level" id="zoom-label">1×</span>
+    <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
   </div>
 
-  <div class="chart-row">
-    <!-- Main chart column -->
-    <div class="chart-col">
-      <div class="chart-wrapper">
-        <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-          <g id="g-grid"       style="pointer-events:none"></g>
-          <g id="g-zones"      style="pointer-events:none"></g>
-          <g id="g-volzone"    style="pointer-events:none"></g>
-          <g id="g-futurezone" style="pointer-events:none"></g>
-          <g id="g-dotgrid"    style="pointer-events:none"></g>
-          <g id="g-future"     style="pointer-events:none"></g>
-          <g id="g-bars"       style="pointer-events:none"></g>
-          <g id="g-oibars"     style="pointer-events:none"></g>
-          <g id="g-volcurve"   style="pointer-events:none"></g>
-          <g id="g-curve"      style="pointer-events:none"></g>
-          <g id="g-markers"    style="pointer-events:none"></g>
-          <g id="g-arrow"      style="pointer-events:none"></g>
-          <g id="g-hitzones" style="pointer-events:all"></g>
-        </svg>
-      </div>
-      <!-- X-axis labels flush to chart bottom (no gap) -->
-      <div class="x-axis-labels" id="x-axis-labels"></div>
-      <!-- PAN scrollbar below x-axis, same border box -->
-      <div class="pan-bar">
-        <label for="pan-slider">Pan</label>
-        <input type="range" id="pan-slider" min="-100" max="100" step="1" value="0">
-      </div>
+  <!-- CHART + SIDEBAR -->
+  <div class="chart-area">
+    <div class="chart-shell">
+      <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <g id="g-grid"></g>
+        <g id="g-zones"></g>
+        <g id="g-volzone"></g>
+        <g id="g-futurezone"></g>
+        <g id="g-dotgrid"></g>
+        <g id="g-future"></g>
+        <g id="g-bars"></g>
+        <g id="g-oibars"></g>
+        <g id="g-volcurve"></g>
+        <g id="g-curve"></g>
+        <g id="g-markers"></g>
+        <g id="g-arrow"></g>
+        <g id="g-hitzones"></g>
+      </svg>
     </div>
 
-    <!-- SD gauge column -->
-    <div class="sd-gauge-wrap">
-      <svg id="sd-gauge" viewBox="0 0 72 442" preserveAspectRatio="none"></svg>
-      <div class="sd-gauge-xaxis"></div>
-      <div class="sd-gauge-pan" style="height:44px;border:var(--border);border-top:none;border-left:none;background:#000;"></div>
+    <!-- SD GAUGE SIDEBAR -->
+    <div class="sd-gauge-sidebar" id="sd-gauge-sidebar">
+      <div class="sdg-header">
+        <span class="sdg-title">SD Gauge</span>
+        <div class="sdg-dot" id="sdg-dot"></div>
+      </div>
+      <div class="sdg-body">
+        <div class="sdg-track-wrap">
+          <!-- zone labels left -->
+          <div class="sdg-labels" id="sdg-labels">
+            <div class="sdg-label m3">−3σ</div>
+            <div class="sdg-label m2">−2σ</div>
+            <div class="sdg-label m1">−1σ</div>
+            <div class="sdg-label z0">μ</div>
+            <div class="sdg-label p1">+1σ</div>
+            <div class="sdg-label p2">+2σ</div>
+            <div class="sdg-label p3">+3σ</div>
+          </div>
+          <!-- the actual track with bands + arrow -->
+          <div class="sdg-track" id="sdg-track">
+            <!-- bands injected by JS -->
+            <!-- arrow -->
+            <div class="sdg-arrow-wrap" id="sdg-arrow-wrap" style="top:50%">
+              <div class="sdg-arrow">
+                <div class="sdg-arrow-head"></div>
+                <div class="sdg-arrow-line"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="sdg-info">
+        <div class="sdg-zone-name" id="sdg-zone-name">—</div>
+        <div class="sdg-zone-pct"  id="sdg-zone-pct">—</div>
+        <div class="sdg-price-val" id="sdg-price-val">—</div>
+        <div class="sdg-price-chg" id="sdg-price-chg">—</div>
+      </div>
     </div>
   </div>
 
+  <!-- X-AXIS -->
+  <div class="x-axis" id="x-axis-labels"></div>
+
+  <!-- LEGEND -->
   <div class="legend">
     <div class="legend-item">
-      <div class="legend-swatch" style="background:var(--call-fill);border-color:var(--call-line)"></div>
-      <div class="legend-text"><span class="pct" style="color:var(--call-line)">Calls</span><span class="desc">Call volume per strike</span></div>
+      <div class="legend-swatch" style="background:rgba(26,58,107,0.14);border-color:#1a3a6b;"></div>
+      <div><span class="legend-name" style="color:#1a3a6b">Calls</span><span class="legend-desc">Call volume per strike</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-swatch" style="background:var(--put-fill);border-color:var(--put-line)"></div>
-      <div class="legend-text"><span class="pct" style="color:var(--put-line)">Puts</span><span class="desc">Put volume per strike</span></div>
+      <div class="legend-swatch" style="background:rgba(201,146,10,0.12);border-color:#c9920a;"></div>
+      <div><span class="legend-name" style="color:#c9920a">Puts</span><span class="legend-desc">Put volume per strike</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-swatch" style="background:transparent;border:2px solid #ff0000;"></div>
-      <div class="legend-text"><span class="pct" style="color:#ff0000">OI Puts</span><span class="desc">Open interest puts (hollow)</span></div>
+      <div class="legend-swatch" style="background:transparent;border:1.5px solid #c9920a;"></div>
+      <div><span class="legend-name" style="color:#c9920a">OI Puts</span><span class="legend-desc">Open interest puts (hollow)</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-swatch" style="background:transparent;border:2px solid #22c55e;"></div>
-      <div class="legend-text"><span class="pct" style="color:#22c55e">OI Calls</span><span class="desc">Open interest calls (hollow)</span></div>
+      <div class="legend-swatch" style="background:transparent;border:1.5px solid #1a3a6b;"></div>
+      <div><span class="legend-name" style="color:#1a3a6b">OI Calls</span><span class="legend-desc">Open interest calls (hollow)</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-line" style="border-top:2px dashed #3b82f6;"></div>
-      <div class="legend-text"><span class="pct" style="color:#3b82f6">Future</span><span class="desc">Future price from data</span></div>
+      <div class="legend-line" style="border-top:1px dashed #9a9080;"></div>
+      <div><span class="legend-name" style="color:#6a6058">Future</span><span class="legend-desc">Future price from data</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-swatch" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.5);"></div>
-      <div class="legend-text"><span class="pct" style="color:#ef4444">Vol Zone</span><span class="desc">±σ at your price &amp; vol</span></div>
+      <div class="legend-swatch" style="background:rgba(26,58,107,0.06);border-color:#1a3a6b;"></div>
+      <div><span class="legend-name" style="color:#1a3a6b">Vol Zone</span><span class="legend-desc">±σ at your price &amp; vol</span></div>
     </div>
     <div class="legend-item">
-      <div class="legend-line" style="background:var(--vol-line)"></div>
-      <div class="legend-text"><span class="pct" style="color:var(--vol-line)">Vol Settle</span><span class="desc">Implied volatility curve</span></div>
+      <div class="legend-line" style="background:#9a9080;"></div>
+      <div><span class="legend-name" style="color:#9a9080">Vol Settle</span><span class="legend-desc">Implied volatility curve</span></div>
     </div>
   </div>
 
-  <footer id="footer-txt">
+  <footer>
     Normal distribution · empirical rule (68–95–99.7) · x-axis spans μ±200 · minor ticks every 5 · major grid every 25 · Vol2Vol live data
   </footer>
 </div>
 
 <!-- TOOLTIP -->
 <div id="tooltip">
-  <div id="tt-header">
-    <div id="tt-strike"></div>
-    <div id="tt-vol"></div>
-  </div>
-  <div id="tt-section"></div>
+  <div id="tt-strike"></div>
+  <div id="tt-vol"></div>
+  <div id="tt-bars"></div>
 </div>
 
 <script>
 /* ================================================================
-   CONFIG
+  CONFIG
 ================================================================ */
-const CONFIG = {
+const CFG = {
   SVG_W: 800, SVG_H: 300,
-  PAD_LEFT: 16, PAD_RIGHT: 16, PAD_TOP: 24, PAD_BOTTOM: 8,
+  PAD_LEFT: 16, PAD_RIGHT: 16, PAD_TOP: 22, PAD_BOTTOM: 38,
   X_HALF: 200, CURVE_PTS: 300,
   DOT_STEP: 5, DOT_MAJOR: 25,
   BAR_MAX_FRAC: 0.42,
   ZONES: [
-    { mult: 3, fill: 'rgba(234,212,18,0.08)', line: '#ffdd00' },
-    { mult: 2, fill: 'rgba(234,130,18,0.08)', line: '#ff9900' },
-    { mult: 1, fill: 'rgba(220,38, 38,0.08)', line: '#ff4444' },
+    { mult: 3, fill: 'rgba(160,140,120,0.06)',  line: '#c0b8a8' },
+    { mult: 2, fill: 'rgba(140,120,100,0.07)', line: '#b0a898' },
+    { mult: 1, fill: 'rgba(120,100,80,0.06)', line: '#a09080' },
   ],
 };
+
 const DATA_URL = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/IntradayData.txt';
 const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIData.txt';
 
 /* ================================================================
-   STATE
-   zoom: 1.0 = normal, stored as raw value, slider maps 0-100 → zoom
-   panOffset: price units offset from mean (positive = look right)
+  STATE
 ================================================================ */
 let state = { mean: 4500, sd: 50, zoom: 1.0, panOffset: 0 };
-let volZoneEnabled = true;
-let computedSd   = null;
-let liveData     = null;
-let oiData       = null;
+let volZoneVisible = true;
+let computedSd = null;
+let liveData   = null;
+let oiData     = null;
 let refreshTimer = null;
 let countdownTimer = null;
 let countdownSec   = 0;
 
-/* Zoom slider: position 50 = 1×, 0 = 0.25×, 100 = 16×
-   We use exponential mapping so each step feels equal. */
-const MIN_ZOOM = 0.25, MAX_ZOOM = 16;
-function sliderToZoom(v) {
-  // v in [0,100] → zoom in [MIN_ZOOM, MAX_ZOOM] log-linearly
-  const t = v / 100;
-  return MIN_ZOOM * Math.pow(MAX_ZOOM / MIN_ZOOM, t);
-}
-function zoomToSlider(z) {
-  return Math.round(Math.log(z / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM) * 100);
-}
-function fmtZoom(z) {
-  if (z >= 1) return Math.round(z) + '×';
-  return '1/' + Math.round(1 / z) + '×';
-}
-
-/* Pan slider: position 0 = centred, ±100 = ±full-range pan
-   Actual price offset depends on current zoom (wider zoom → bigger pan) */
-function panSliderToOffset(v) {
-  // v in [-100, 100]; ±100 = ±3 sigma of pan
-  const sd = state.sd > 0 ? state.sd : 75;
-  return (v / 100) * sd * 3;
-}
-
 /* ================================================================
-   MATH
+  MATH
 ================================================================ */
-const Math_ = {
+const M = {
   normalPDF(x, mu, s) { const z=(x-mu)/s; return Math.exp(-0.5*z*z)/(s*Math.sqrt(2*Math.PI)); },
   scale(v, d0, d1, r0, r1) { return r0 + (v-d0)/(d1-d0)*(r1-r0); },
 };
 
 /* ================================================================
-   COORDS
+  COORDS
 ================================================================ */
 function makeCoords(mean, sd) {
-  const halfRange = CONFIG.X_HALF / state.zoom;
-  const centre    = mean + state.panOffset;
-  const rawMin    = centre - halfRange;
-  const rawMax    = centre + halfRange;
-  const xMin = Math.floor(rawMin / 25) * 25;
-  const xMax = Math.ceil (rawMax / 25) * 25;
-  const plotL=CONFIG.PAD_LEFT, plotR=CONFIG.SVG_W-CONFIG.PAD_RIGHT;
-  const plotT=CONFIG.PAD_TOP,  plotB=CONFIG.SVG_H-CONFIG.PAD_BOTTOM;
-  const peakPDF = Math_.normalPDF(mean,mean,sd);
+  const halfRange = CFG.X_HALF / state.zoom;
+  const centre = mean + state.panOffset;
+  const xMin = Math.floor((centre - halfRange) / 25) * 25;
+  const xMax = Math.ceil ((centre + halfRange) / 25) * 25;
+  const pL=CFG.PAD_LEFT, pR=CFG.SVG_W-CFG.PAD_RIGHT;
+  const pT=CFG.PAD_TOP,  pB=CFG.SVG_H-CFG.PAD_BOTTOM;
+  const peakPDF = M.normalPDF(mean, mean, sd);
   return {
-    xMin, xMax, plotL, plotR, plotT, plotB, peakPDF,
-    toSvgX: x  => Math_.scale(x,   xMin, xMax, plotL, plotR),
-    toSvgY: pdf=> Math_.scale(pdf,  0, peakPDF, plotB, plotT),
+    xMin, xMax, plotL:pL, plotR:pR, plotT:pT, plotB:pB, peakPDF,
+    toSvgX: x   => M.scale(x, xMin, xMax, pL, pR),
+    toSvgY: pdf => M.scale(pdf, 0, peakPDF, pB, pT),
   };
 }
 
 /* ================================================================
-   SVG HELPERS
+  SVG
 ================================================================ */
-const SVG_NS = 'http://www.w3.org/2000/svg';
-function svgEl(tag, attrs={}) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, a={}) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k,v] of Object.entries(a)) e.setAttribute(k, v);
   return e;
 }
-function clearGroup(id) {
+function clearG(id) {
   const g = document.getElementById(id);
-  if (!g) { console.error('Missing SVG group:', id); return { appendChild:()=>{} }; }
+  if (!g) return { appendChild:()=>{} };
   while (g.firstChild) g.removeChild(g.firstChild);
   return g;
 }
 
 /* ================================================================
-   PARSE
+  PARSE
 ================================================================ */
 function parseIntraday(text) {
   const lines = text.trim().split('\n').map(l=>l.trim()).filter(Boolean);
-  const title  = lines[0];
-  const futM   = title.match(/vs\s+([\d.]+)\s*\(([-+]?[\d.]+)\)/);
-  const dteM   = title.match(/\(([\d.]+)\s*DTE\)/);
-  const meta   = lines[1]||'';
-  const callM  = meta.match(/Call:\s*([\d,]+)/);
-  const putM   = meta.match(/Put:\s*([\d,]+)/);
-  const volM   = meta.match(/Vol:\s*([\d.]+)/);
-  const hi     = lines.findIndex(l=>l.startsWith('Strike,'));
-  const rows   = [];
+  const title = lines[0];
+  const futM = title.match(/vs\s+([\d.]+)\s*\(([-+]?[\d.]+)\)/);
+  const dteM = title.match(/\(([\d.]+)\s*DTE\)/);
+  const meta = lines[1]||'';
+  const callM = meta.match(/Call:\s*([\d,]+)/);
+  const putM  = meta.match(/Put:\s*([\d,]+)/);
+  const volM  = meta.match(/Vol:\s*([\d.]+)/);
+  const hi = lines.findIndex(l=>l.startsWith('Strike,'));
+  const rows = [];
   if (hi>=0) {
     for (let i=hi+1;i<lines.length;i++) {
       const p=lines[i].split(',');
       if (p.length<4) continue;
       const strike=parseFloat(p[0]),call=parseFloat(p[1]),put=parseFloat(p[2]),vol=parseFloat(p[3]);
-      if (!isNaN(strike)) rows.push({strike,call:call||0,put:put||0,vol:isNaN(vol)?null:vol});
+      if (!isNaN(strike)) rows.push({strike, call:call||0, put:put||0, vol:isNaN(vol)?null:vol});
     }
   }
   return {
-    future:    futM ? parseFloat(futM[1]) : null,
-    futChg:    futM ? futM[2] : '—',
-    dte:       dteM ? dteM[1] : '—',
-    callTotal: callM ? callM[1] : '—',
-    putTotal:  putM  ? putM[1]  : '—',
-    vol:       volM  ? volM[1]  : '—',
-    title:     title.split(' - ')[0]||title,
+    future:   futM ? parseFloat(futM[1]) : null,
+    futChg:   futM ? futM[2] : '—',
+    dte:      dteM ? dteM[1] : '—',
+    callTotal:callM ? callM[1] : '—',
+    putTotal: putM ? putM[1] : '—',
+    vol:      volM ? volM[1] : '—',
+    title:    title.split(' - ')[0]||title,
     rows,
   };
 }
 
 /* ================================================================
-   DRAW GRID
+  DRAW GRID
 ================================================================ */
 function drawGrid(c) {
-  const g = clearGroup('g-grid');
-  g.appendChild(svgEl('line',{x1:c.plotL,y1:c.plotB,x2:c.plotR,y2:c.plotB,stroke:'#fff','stroke-width':'1.5'}));
+  const g = clearG('g-grid');
+  g.appendChild(el('line',{x1:c.plotL,y1:c.plotB,x2:c.plotR,y2:c.plotB,stroke:tc('#c8bfb0','#2a2a2a'),'stroke-width':'1'}));
   for (const h of [0.25,0.5,0.75]) {
-    const sy = Math_.scale(h,0,1,c.plotB,c.plotT);
-    g.appendChild(svgEl('line',{x1:c.plotL,y1:sy,x2:c.plotR,y2:sy,stroke:'#333','stroke-width':'0.5','stroke-dasharray':'3,4'}));
+    const sy = M.scale(h,0,1,c.plotB,c.plotT);
+    g.appendChild(el('line',{x1:c.plotL,y1:sy,x2:c.plotR,y2:sy,stroke:tc('#d8d0c4','#1c1c1c'),'stroke-width':'0.5','stroke-dasharray':'2,4'}));
   }
 }
 
 /* ================================================================
-   DRAW ZONES
+  DRAW ZONES
 ================================================================ */
 function drawZones(c, mean, sd) {
-  const g = clearGroup('g-zones');
-  for (const zone of CONFIG.ZONES) {
+  const g = clearG('g-zones');
+  for (const zone of CFG.ZONES) {
     const xL=mean-zone.mult*sd, xR=mean+zone.mult*sd;
-    const steps=120, dx=(xR-xL)/steps;
+    const steps=100, dx=(xR-xL)/steps;
     let d='';
     for (let i=0;i<=steps;i++) {
-      const x=xL+i*dx, pdf=Math_.normalPDF(x,mean,sd);
+      const x=xL+i*dx, pdf=M.normalPDF(x,mean,sd);
       d += (i===0?`M ${c.toSvgX(x)} ${c.toSvgY(pdf)}`:`L ${c.toSvgX(x)} ${c.toSvgY(pdf)} `);
     }
     d += `L ${c.toSvgX(xR)} ${c.plotB} L ${c.toSvgX(xL)} ${c.plotB} Z`;
-    g.appendChild(svgEl('path',{d,fill:'none',stroke:'none'}));
+    g.appendChild(el('path',{d,fill:'none',stroke:'none'}));
   }
 }
 
 /* ================================================================
-   DRAW DOT GRID
+  DRAW DOT GRID
 ================================================================ */
 function drawDotGrid(c, mean, sd) {
-  const g=clearGroup('g-dotgrid');
-  const step=CONFIG.DOT_STEP;
-  const firstX=Math.ceil(c.xMin/step)*step;
-  const offset=(c.plotB-c.plotT)%12;
-  for (let x=firstX;x<=c.xMax+0.001;x+=step) {
-    const sx=c.toSvgX(x);
-    const isMajor=Math.abs(Math.round(x/CONFIG.DOT_MAJOR)*CONFIG.DOT_MAJOR-x)<0.001;
-    const sf=Math.round(Math.abs(x-mean)/sd*100)/100;
+  const g = clearG('g-dotgrid');
+  const step = CFG.DOT_STEP;
+  const firstX = Math.ceil(c.xMin/step)*step;
+  const offset = (c.plotB-c.plotT)%12;
+  for (let x=firstX; x<=c.xMax+0.001; x+=step) {
+    const sx = c.toSvgX(x);
+    const isMajor = Math.abs(Math.round(x/CFG.DOT_MAJOR)*CFG.DOT_MAJOR-x)<0.001;
+    const sf = Math.round(Math.abs(x-mean)/sd*100)/100;
     if (isMajor) {
-      let col='#ffffff';
-      if (Math.abs(sf-1)<0.02) col=CONFIG.ZONES[2].line;
-      else if (Math.abs(sf-2)<0.02) col=CONFIG.ZONES[1].line;
-      else if (Math.abs(sf-3)<0.02) col=CONFIG.ZONES[0].line;
-      g.appendChild(svgEl('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:col,'stroke-width':'0.5','stroke-dasharray':'1,1','stroke-dashoffset':String(offset)}));
+      let col='#ddd5c8';
+      if (Math.abs(sf-1)<0.02) col='#ccc4b4';
+      else if (Math.abs(sf-2)<0.02) col='#c0b8a8';
+      else if (Math.abs(sf-3)<0.02) col='#b8b0a0';
+      g.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:col,'stroke-width':'0.5','stroke-dasharray':'1,2','stroke-dashoffset':String(offset)}));
     } else {
-      g.appendChild(svgEl('line',{x1:sx,y1:c.plotB-8,x2:sx,y2:c.plotB,stroke:'#444','stroke-width':'1'}));
+      g.appendChild(el('line',{x1:sx,y1:c.plotB-6,x2:sx,y2:c.plotB,stroke:tc('#d8d0c4','#222222'),'stroke-width':'0.75'}));
     }
   }
 }
 
 /* ================================================================
-   DRAW FUTURE ZONE + LINE
+  DRAW FUTURE ZONE + LINE
 ================================================================ */
 function drawFutureLine(c) {
-  const gLine = clearGroup('g-future');
-  const gZone = clearGroup('g-futurezone');
+  const gLine = clearG('g-future');
+  const gZone = clearG('g-futurezone');
   if (!liveData || liveData.future == null) return;
-
-  const fx  = liveData.future;
+  const fx = liveData.future;
   const dte = parseFloat(liveData.dte);
-
   let iv = NaN;
   if (liveData.rows) {
-    const rows = liveData.rows.filter(r => r.vol != null && r.vol > 0);
-    const below = rows.filter(r => r.strike <= fx).slice(-1)[0];
-    const above = rows.filter(r => r.strike >= fx)[0];
+    const rows = liveData.rows.filter(r=>r.vol!=null&&r.vol>0);
+    const below = rows.filter(r=>r.strike<=fx).slice(-1)[0];
+    const above = rows.filter(r=>r.strike>=fx)[0];
     if (below && above) {
-      const t = below.strike === above.strike ? 0
-        : (fx - below.strike) / (above.strike - below.strike);
-      iv = (below.vol + t * (above.vol - below.vol)) * 100;
+      const t = below.strike===above.strike ? 0 : (fx-below.strike)/(above.strike-below.strike);
+      iv = (below.vol + t*(above.vol-below.vol))*100;
     }
   }
   if (isNaN(iv)) iv = parseFloat(liveData.vol);
-
-  if (!isNaN(iv) && !isNaN(dte) && dte > 0 && iv > 0) {
-    const futureSd = fx * (iv / 100) * Math.sqrt(dte / 252);
-    const zL = Math.max(fx - futureSd, c.xMin);
-    const zR = Math.min(fx + futureSd, c.xMax);
-    if (zR > zL) {
-      gZone.appendChild(svgEl('rect', {
-        x: c.toSvgX(zL), y: c.plotT,
-        width:  c.toSvgX(zR) - c.toSvgX(zL),
-        height: c.plotB - c.plotT,
-        fill: 'rgba(59,130,246,0.10)', stroke: 'none',
-      }));
-      gZone.appendChild(svgEl('line',{x1:c.toSvgX(zL),y1:c.plotT,x2:c.toSvgX(zL),y2:c.plotB,stroke:'rgba(59,130,246,0.30)','stroke-width':'0.75','stroke-dasharray':'3,3'}));
-      gZone.appendChild(svgEl('line',{x1:c.toSvgX(zR),y1:c.plotT,x2:c.toSvgX(zR),y2:c.plotB,stroke:'rgba(59,130,246,0.30)','stroke-width':'0.75','stroke-dasharray':'3,3'}));
+  if (!isNaN(iv) && !isNaN(dte) && dte>0 && iv>0) {
+    const futureSd = fx*(iv/100)*Math.sqrt(dte/252);
+    const zL=Math.max(fx-futureSd,c.xMin), zR=Math.min(fx+futureSd,c.xMax);
+    if (zR>zL) {
+      gZone.appendChild(el('rect',{x:c.toSvgX(zL),y:c.plotT,width:c.toSvgX(zR)-c.toSvgX(zL),height:c.plotB-c.plotT,fill:tc('rgba(100,80,60,0.04)','rgba(200,200,200,0.04)'),stroke:'none'}));
+      gZone.appendChild(el('line',{x1:c.toSvgX(zL),y1:c.plotT,x2:c.toSvgX(zL),y2:c.plotB,stroke:tc('rgba(100,80,60,0.18)','rgba(160,160,160,0.2)'),'stroke-width':'0.75','stroke-dasharray':'2,3'}));
+      gZone.appendChild(el('line',{x1:c.toSvgX(zR),y1:c.plotT,x2:c.toSvgX(zR),y2:c.plotB,stroke:tc('rgba(100,80,60,0.18)','rgba(160,160,160,0.2)'),'stroke-width':'0.75','stroke-dasharray':'2,3'}));
       const sig = Math.round(futureSd);
-      gLine.appendChild(Object.assign(svgEl('text', {
-        x: c.toSvgX(fx - futureSd), y: c.plotT + 14,
-        'text-anchor': 'middle', 'font-size': '9', 'font-weight': 'bold',
-        'font-family': 'Courier Prime,Courier New,monospace', fill: '#60a5fa',
-      }), { textContent: '−' + sig }));
-      gLine.appendChild(Object.assign(svgEl('text', {
-        x: c.toSvgX(fx + futureSd), y: c.plotT + 14,
-        'text-anchor': 'middle', 'font-size': '9', 'font-weight': 'bold',
-        'font-family': 'Courier Prime,Courier New,monospace', fill: '#60a5fa',
-      }), { textContent: '+' + sig }));
+      for (const [sx,lbl] of [[c.toSvgX(fx-futureSd),'−'+sig],[c.toSvgX(fx+futureSd),'+'+sig]]) {
+        const t=el('text',{x:sx,y:c.plotT+12,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:tc('#8a7a6a','#666666'),'font-weight':'500'});
+        t.textContent=lbl; gLine.appendChild(t);
+      }
+    }
+  }
+  if (fx>=c.xMin && fx<=c.xMax) {
+    const sx = c.toSvgX(fx);
+    gLine.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:tc('#6a5a48','#555555'),'stroke-width':'1','stroke-dasharray':'4,3'}));
+    const t = el('text',{x:sx+4,y:c.plotT+10,'font-size':'8','font-family':'IBM Plex Mono,monospace',fill:tc('#6a5a48','#666666'),'font-weight':'500'});
+    t.textContent = fx.toLocaleString(); gLine.appendChild(t);
+  }
+}
+
+/* ================================================================
+  DRAW VOL ZONE
+================================================================ */
+function drawVolZone(c) {
+  const g = clearG('g-volzone');
+  const displayText = document.getElementById('vol-price-display').textContent;
+  const price = parseFloat(displayText.replace(/,/g,''));
+  const volPct = parseFloat(document.getElementById('inp-vol-val').value);
+  if (isNaN(price)||price<=0||displayText==='—') return;
+  const sxP = c.toSvgX(Math.max(Math.min(price,c.xMax),c.xMin));
+  if (price>=c.xMin && price<=c.xMax) {
+    g.appendChild(el('line',{x1:sxP,y1:c.plotT,x2:sxP,y2:c.plotB,stroke:tc('#9a9080','#888888'),'stroke-width':'1','stroke-dasharray':'4,3'}));
+    const t = el('text',{x:sxP+4,y:c.plotT+20,'font-size':'8','font-family':'IBM Plex Mono,monospace',fill:tc('#9a9080','#888888'),'font-weight':'500'});
+    t.textContent = isNaN(volPct)||volPct<=0 ? price.toLocaleString()+' (no IV)' : price.toLocaleString()+' ('+volPct+'%)';
+    g.appendChild(t);
+  }
+  if (isNaN(volPct)||volPct<=0) return;
+  const dte = liveData ? parseFloat(liveData.dte) : NaN;
+  const dteVal = (!isNaN(dte)&&dte>0) ? dte : 1;
+  const sigma = price*(volPct/100)*Math.sqrt(dteVal/252);
+  const zL=price-sigma, zR=price+sigma;
+  if (zR<c.xMin||zL>c.xMax) return;
+  const dL=Math.max(zL,c.xMin), dR=Math.min(zR,c.xMax);
+  const sxL=c.toSvgX(dL), sxR=c.toSvgX(dR);
+  g.appendChild(el('rect',{x:sxL,y:c.plotT,width:Math.max(sxR-sxL,1),height:c.plotB-c.plotT,fill:tc('rgba(26,58,107,0.05)','rgba(26,58,107,0.07)'),stroke:'none'}));
+  if (dL>c.xMin) g.appendChild(el('line',{x1:sxL,y1:c.plotT,x2:sxL,y2:c.plotB,stroke:tc('rgba(26,58,107,0.25)','rgba(26,58,107,0.4)'),'stroke-width':'0.75','stroke-dasharray':'2,3'}));
+  if (dR<c.xMax) g.appendChild(el('line',{x1:sxR,y1:c.plotT,x2:sxR,y2:c.plotB,stroke:tc('rgba(26,58,107,0.25)','rgba(26,58,107,0.4)'),'stroke-width':'0.75','stroke-dasharray':'2,3'}));
+  for (const [sx,lbl] of [[sxL,'−'+Math.round(sigma)],[sxR,'+'+Math.round(sigma)]]) {
+    const lt=el('text',{x:sx,y:c.plotT+10,'text-anchor':'middle','font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('rgba(26,58,107,0.55)','rgba(26,58,107,0.8)')});
+    lt.textContent=lbl; g.appendChild(lt);
+  }
+}
+
+/* ================================================================
+  DRAW BARS + HIT ZONES
+  Hit zones cover BOTH solid intraday bars AND hollow OI bars.
+  OI-only strikes (no intraday volume) also get a hit zone.
+================================================================ */
+function drawBars(c, rows) {
+  const g  = clearG('g-bars');
+  const gh = clearG('g-hitzones');
+  if (!rows||!rows.length) return;
+  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax);
+  if (!visible.length) return;
+  const oiVisible = oiData ? (oiData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+  const allVols = [...visible,...oiVisible].map(r=>Math.max(r.call||0,r.put||0));
+  const maxVol = Math.max(...allVols, 1);
+  const availH = (c.plotB-c.plotT)*0.85;
+  const strikes = visible.map(r=>r.strike);
+  const gap = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
+  const halfBar = Math.max(gap*0.22, 1.5);
+
+  // Build a map of all strikes we need hit zones for (intraday + OI)
+  const strikeMap = new Map();
+  for (const r of visible) strikeMap.set(r.strike, { ...r, oicall:0, oiput:0 });
+  for (const r of oiVisible) {
+    if (strikeMap.has(r.strike)) {
+      const entry = strikeMap.get(r.strike);
+      entry.oicall = r.call || 0;
+      entry.oiput  = r.put  || 0;
+    } else {
+      // OI-only strike — add with zero intraday volume
+      strikeMap.set(r.strike, { strike:r.strike, call:0, put:0, vol:null, oicall:r.call||0, oiput:r.put||0 });
     }
   }
 
-  if (fx >= c.xMin && fx <= c.xMax) {
-    const sx = c.toSvgX(fx);
-    gLine.appendChild(svgEl('line',{
-      x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,
-      stroke:'#3b82f6','stroke-width':'1.5','stroke-dasharray':'5,4',
-    }));
-    const t = svgEl('text',{
-      x:sx+4,y:c.plotT+10,
-      'font-size':'8','font-family':'Courier Prime,Courier New,monospace',
-      fill:'#3b82f6','font-weight':'bold',
-    });
-    t.textContent = fx.toLocaleString();
-    gLine.appendChild(t);
-  }
-}
-
-/* ================================================================
-   DRAW VOL ZONE
-================================================================ */
-function drawVolZone(c) {
-  const g = clearGroup('g-volzone');
-  if (!volZoneEnabled) return;
-  const displayText = document.getElementById('vol-price-display').textContent;
-  const price  = parseFloat(displayText.replace(/,/g, ''));
-  const volPct = parseFloat(document.getElementById('inp-vol-val').value);
-  if (isNaN(price) || price <= 0 || displayText === '—') return;
-
-  const sxP = c.toSvgX(Math.max(Math.min(price, c.xMax), c.xMin));
-  if (price >= c.xMin && price <= c.xMax) {
-    g.appendChild(svgEl('line',{x1:sxP,y1:c.plotT,x2:sxP,y2:c.plotB,
-      stroke:'#ef4444','stroke-width':'1.5','stroke-dasharray':'5,4'}));
-    const t = svgEl('text',{x:sxP+4,y:c.plotT+22,
-      'font-size':'8','font-family':'Courier Prime,Courier New,monospace',
-      fill:'#ef4444','font-weight':'bold'});
-    t.textContent = isNaN(volPct) || volPct <= 0
-      ? price.toLocaleString() + ' (no IV)'
-      : price.toLocaleString() + ' (' + volPct + '%)';
-    g.appendChild(t);
-  }
-
-  if (isNaN(volPct) || volPct <= 0) return;
-
-  const dte    = liveData ? parseFloat(liveData.dte) : NaN;
-  const dteVal = (!isNaN(dte) && dte > 0) ? dte : 1;
-  const sigma  = price * (volPct / 100) * Math.sqrt(dteVal / 252);
-  const zL = price - sigma, zR = price + sigma;
-  if (zR < c.xMin || zL > c.xMax) return;
-
-  const dL = Math.max(zL, c.xMin), dR = Math.min(zR, c.xMax);
-  const sxL = c.toSvgX(dL), sxR = c.toSvgX(dR);
-
-  g.appendChild(svgEl('rect',{
-    x: sxL, y: c.plotT,
-    width: Math.max(sxR - sxL, 1), height: c.plotB - c.plotT,
-    fill: 'rgba(239,68,68,0.12)', stroke: 'none',
-  }));
-  if (dL > c.xMin)
-    g.appendChild(svgEl('line',{x1:sxL,y1:c.plotT,x2:sxL,y2:c.plotB,
-      stroke:'rgba(239,68,68,0.5)','stroke-width':'1','stroke-dasharray':'3,3'}));
-  if (dR < c.xMax)
-    g.appendChild(svgEl('line',{x1:sxR,y1:c.plotT,x2:sxR,y2:c.plotB,
-      stroke:'rgba(239,68,68,0.5)','stroke-width':'1','stroke-dasharray':'3,3'}));
-
-  for (const [sx, lbl] of [[sxL,'−'+Math.round(sigma)],[sxR,'+'+Math.round(sigma)]]) {
-    const lt = svgEl('text',{x:sx,y:c.plotT+10,'text-anchor':'middle',
-      'font-size':'7','font-family':'Courier Prime,Courier New,monospace',
-      fill:'rgba(239,68,68,0.9)'});
-    lt.textContent = lbl;
-    g.appendChild(lt);
-  }
-}
-
-/* ================================================================
-   DRAW BARS + HIT ZONES
-================================================================ */
-function drawBars(c, rows) {
-  const g  = clearGroup('g-bars');
-  const gh = clearGroup('g-hitzones');
-  if (!rows||!rows.length) return;
-
-  const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax);
-  if (!visible.length) return;
-
-  const oiVisible = oiData ? (oiData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
-  const allVols   = [...visible, ...oiVisible].map(r=>Math.max(r.call||0,r.put||0));
-  const maxVol    = Math.max(...allVols, 1);
-  const availH    = (c.plotB - c.plotT) * 0.85;
-  const strikes  = visible.map(r=>r.strike);
-  const gap      = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
-  const halfBar  = Math.max(gap*0.22, 1.5);
-  const hitW     = Math.max(gap * 0.9, halfBar * 4 + 1);
-
+  // Draw solid intraday bars
   for (const r of visible) {
     const cx = c.toSvgX(r.strike);
-
     if (r.call>0) {
       const h=r.call/maxVol*availH;
-      g.appendChild(svgEl('rect',{x:cx-halfBar*2-0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(59,130,246,0.75)',stroke:'#60a5fa','stroke-width':'0.5'}));
+      g.appendChild(el('rect',{x:cx-halfBar*2-0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(26,58,107,0.14)',stroke:'#1a3a6b','stroke-width':'0.5'}));
     }
     if (r.put>0) {
       const h=r.put/maxVol*availH;
-      g.appendChild(svgEl('rect',{x:cx+0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(250,204,21,0.75)',stroke:'#facc15','stroke-width':'0.5'}));
+      g.appendChild(el('rect',{x:cx+0.5,y:c.plotB-h,width:halfBar*2,height:h,fill:'rgba(201,146,10,0.12)',stroke:'#c9920a','stroke-width':'0.5'}));
     }
+  }
 
-    // fill="transparent" + pointer-events="all" is required —
-    // fill="rgba(0,0,0,0)" silently drops pointer events in most browsers.
-    const hitRect = svgEl('rect',{
-      x: cx-halfBar*2-0.5, y: c.plotT,
-      width: hitW, height: c.plotB - c.plotT,
-      fill: 'transparent', stroke: 'none',
-      'pointer-events': 'all',
-      style: 'cursor:crosshair',
+  // Draw hit zones for every strike in the combined map
+  for (const [strike, r] of strikeMap) {
+    const cx = c.toSvgX(strike);
+    const maxH = Math.max(r.call||0, r.put||0, r.oicall||0, r.oiput||0) / maxVol * availH;
+    if (maxH <= 0) continue;
+    const hitRect = el('rect',{
+      x:cx-halfBar*2-0.5, y:c.plotB-maxH,
+      width:halfBar*4+1, height:maxH,
+      fill:'rgba(0,0,0,0.01)', stroke:'none',
+      style:'cursor:crosshair',
     });
-    hitRect.dataset.strike = r.strike;
-    hitRect.dataset.call   = r.call;
-    hitRect.dataset.put    = r.put;
+    hitRect.dataset.strike = strike;
+    hitRect.dataset.call   = r.call   || 0;
+    hitRect.dataset.put    = r.put    || 0;
     hitRect.dataset.vol    = r.vol != null ? (r.vol*100).toFixed(2)+'%' : '—';
-    if (oiData && oiData.rows) {
-      const oiRow = oiData.rows.find(o => o.strike === r.strike);
-      hitRect.dataset.oicall = oiRow ? oiRow.call : '';
-      hitRect.dataset.oiput  = oiRow ? oiRow.put  : '';
-    }
+    hitRect.dataset.oicall = r.oicall || 0;
+    hitRect.dataset.oiput  = r.oiput  || 0;
     gh.appendChild(hitRect);
   }
 }
 
 /* ================================================================
-   DRAW OI BARS
+  DRAW OI BARS
 ================================================================ */
 function drawOIBars(c, rows) {
-  const g = clearGroup('g-oibars');
-  if (!rows || !rows.length) return;
-
-  const visible = rows.filter(r => r.strike >= c.xMin && r.strike <= c.xMax);
+  const g = clearG('g-oibars');
+  if (!rows||!rows.length) return;
+  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax);
   if (!visible.length) return;
-
   const intradayVisible = liveData ? (liveData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
-  const allVols = [...visible, ...intradayVisible].map(r=>Math.max(r.call||0,r.put||0));
-  const maxVol  = Math.max(...allVols, 1);
-  const availH  = (c.plotB - c.plotT) * 0.85;
-  const strikes  = visible.map(r => r.strike);
-  const gap      = strikes.length > 1 ? c.toSvgX(strikes[1]) - c.toSvgX(strikes[0]) : 10;
-  const halfBar  = Math.max(gap * 0.22, 1.5);
-  const bw       = halfBar * 2;
-
+  const allVols = [...visible,...intradayVisible].map(r=>Math.max(r.call||0,r.put||0));
+  const maxVol = Math.max(...allVols, 1);
+  const availH = (c.plotB-c.plotT)*0.85;
+  const strikes = visible.map(r=>r.strike);
+  const gap = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
+  const halfBar = Math.max(gap*0.22, 1.5);
+  const bw = halfBar*2;
   for (const r of visible) {
     const cx = c.toSvgX(r.strike);
-    if (r.call > 0) {
-      const h = Math.max(r.call / maxVol * availH, 0.5);
-      g.appendChild(svgEl('rect', {
-        x: cx - bw - 0.5, y: c.plotB - h,
-        width: bw, height: h,
-        fill: 'none', stroke: '#22c55e', 'stroke-width': '1.5',
-      }));
+    if (r.call>0) {
+      const h=Math.max(r.call/maxVol*availH,0.5);
+      g.appendChild(el('rect',{x:cx-bw-0.5,y:c.plotB-h,width:bw,height:h,fill:'none',stroke:'#1a3a6b','stroke-width':'1'}));
     }
-    if (r.put > 0) {
-      const h = Math.max(r.put / maxVol * availH, 0.5);
-      g.appendChild(svgEl('rect', {
-        x: cx + 0.5, y: c.plotB - h,
-        width: bw, height: h,
-        fill: 'none', stroke: '#ff4444', 'stroke-width': '1.5',
-      }));
+    if (r.put>0) {
+      const h=Math.max(r.put/maxVol*availH,0.5);
+      g.appendChild(el('rect',{x:cx+0.5,y:c.plotB-h,width:bw,height:h,fill:'none',stroke:'#c9920a','stroke-width':'1'}));
     }
   }
 }
 
 /* ================================================================
-   DRAW VOL CURVE
+  DRAW VOL CURVE
 ================================================================ */
 function drawVolCurve(c, rows) {
-  const g = clearGroup('g-volcurve');
+  const g = clearG('g-volcurve');
   if (!rows||!rows.length) return;
-  const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax && r.vol!=null && r.vol>0);
+  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0);
   if (visible.length<2) return;
-
   const vols = visible.map(r=>r.vol);
-  const minV = Math.min(...vols), maxV = Math.max(...vols);
-  const availH = (c.plotB - c.plotT) * CONFIG.BAR_MAX_FRAC;
-
-  function toVolY(v) {
-    return Math_.scale(v, minV, maxV, c.plotB, c.plotB - availH);
-  }
-
+  const minV=Math.min(...vols), maxV=Math.max(...vols);
+  const availH = (c.plotB-c.plotT)*CFG.BAR_MAX_FRAC;
+  function toVolY(v) { return M.scale(v,minV,maxV,c.plotB,c.plotB-availH); }
   const pts = visible.map(r=>`${c.toSvgX(r.strike)},${toVolY(r.vol)}`);
-  g.appendChild(svgEl('polyline',{
-    points: pts.join(' '),
-    fill:'none', stroke:'#a78bfa',
-    'stroke-width':'1.5','stroke-linejoin':'round','stroke-linecap':'round',
-  }));
-
+  g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:tc('#9a9080','#707070'),'stroke-width':'1','stroke-linejoin':'round','stroke-linecap':'round'}));
   const fmtV = v=>(v*100).toFixed(1)+'%';
-  const minRow = visible.reduce((a,b)=>a.vol<b.vol?a:b);
-  const maxRow = visible.reduce((a,b)=>a.vol>b.vol?a:b);
-  for (const row of [minRow, maxRow]) {
-    const sx=c.toSvgX(row.strike), sy=toVolY(row.vol);
-    const t=svgEl('text',{x:sx,y:sy-4,'text-anchor':'middle','font-size':'7',
-      'font-family':'Courier Prime,Courier New,monospace',fill:'#a78bfa',opacity:'0.9'});
-    t.textContent=fmtV(row.vol);
-    g.appendChild(t);
+  for (const row of [visible.reduce((a,b)=>a.vol<b.vol?a:b), visible.reduce((a,b)=>a.vol>b.vol?a:b)]) {
+    const t=el('text',{x:c.toSvgX(row.strike),y:toVolY(row.vol)-4,'text-anchor':'middle','font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('#9a9080','#707070'),opacity:'0.9'});
+    t.textContent=fmtV(row.vol); g.appendChild(t);
   }
 }
 
 /* ================================================================
-   DRAW EXPECTED-MOVE ARROW
+  DRAW ARROW
 ================================================================ */
 function drawArrow(c, rows) {
-  const g = clearGroup('g-arrow');
-  if (!rows || !rows.length) return;
-  const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax && r.vol!=null && r.vol>0);
+  const g = clearG('g-arrow');
+  if (!rows||!rows.length) return;
+  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0);
   if (!visible.length) return;
-
-  const minVol  = Math.min(...visible.map(r=>r.vol));
-  const halfLen = (minVol / 16) * state.mean;
-  const arrowY  = c.plotB - 12;
-  const mx   = c.toSvgX(state.mean);
-  const lx   = c.toSvgX(Math.max(state.mean - halfLen, c.xMin));
-  const rx   = c.toSvgX(Math.min(state.mean + halfLen, c.xMax));
-  const aw=5, ah=4;
-
-  g.appendChild(svgEl('line',{x1:lx,y1:arrowY,x2:rx,y2:arrowY,stroke:'#fff','stroke-width':'1.5'}));
-  g.appendChild(svgEl('path',{d:`M ${lx} ${arrowY} L ${lx+ah} ${arrowY-aw/2} L ${lx+ah} ${arrowY+aw/2} Z`,fill:'#fff',stroke:'none'}));
-  g.appendChild(svgEl('path',{d:`M ${rx} ${arrowY} L ${rx-ah} ${arrowY-aw/2} L ${rx-ah} ${arrowY+aw/2} Z`,fill:'#fff',stroke:'none'}));
-  g.appendChild(svgEl('line',{x1:mx,y1:arrowY-4,x2:mx,y2:arrowY+4,stroke:'#fff','stroke-width':'1'}));
-
-  const fmt = v => v < 1 ? v.toFixed(2) : Math.round(v).toLocaleString();
-  const lt = svgEl('text',{x:lx-3,y:arrowY-2,'text-anchor':'end','font-size':'7',
-    'font-family':'Courier Prime,Courier New,monospace',fill:'#aaa'});
-  lt.textContent = '−'+fmt(halfLen); g.appendChild(lt);
-  const rt = svgEl('text',{x:rx+3,y:arrowY-2,'text-anchor':'start','font-size':'7',
-    'font-family':'Courier Prime,Courier New,monospace',fill:'#aaa'});
-  rt.textContent = '+'+fmt(halfLen); g.appendChild(rt);
+  const minVol = Math.min(...visible.map(r=>r.vol));
+  const halfLen = (minVol/16)*state.mean;
+  const arrowY = c.plotB-10;
+  const mx=c.toSvgX(state.mean);
+  const lx=c.toSvgX(Math.max(state.mean-halfLen,c.xMin));
+  const rx=c.toSvgX(Math.min(state.mean+halfLen,c.xMax));
+  const aw=4, ah=4;
+  g.appendChild(el('line',{x1:lx,y1:arrowY,x2:rx,y2:arrowY,stroke:tc('#b8b0a0','#404040'),'stroke-width':'1'}));
+  g.appendChild(el('path',{d:`M${lx} ${arrowY} L${lx+ah} ${arrowY-aw/2} L${lx+ah} ${arrowY+aw/2} Z`,fill:tc('#b8b0a0','#404040'),stroke:'none'}));
+  g.appendChild(el('path',{d:`M${rx} ${arrowY} L${rx-ah} ${arrowY-aw/2} L${rx-ah} ${arrowY+aw/2} Z`,fill:tc('#b8b0a0','#404040'),stroke:'none'}));
+  g.appendChild(el('line',{x1:mx,y1:arrowY-3,x2:mx,y2:arrowY+3,stroke:tc('#b8b0a0','#404040'),'stroke-width':'0.75'}));
+  const fmt = v=>v<1?v.toFixed(2):Math.round(v).toLocaleString();
+  const lt=el('text',{x:lx-3,y:arrowY-2,'text-anchor':'end','font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('#a09080','#505050')});
+  lt.textContent='−'+fmt(halfLen); g.appendChild(lt);
+  const rt=el('text',{x:rx+3,y:arrowY-2,'text-anchor':'start','font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('#a09080','#505050')});
+  rt.textContent='+'+fmt(halfLen); g.appendChild(rt);
 }
 
 /* ================================================================
-   DRAW BELL CURVE
+  DRAW CURVE
 ================================================================ */
 function drawCurve(c, mean, sd) {
-  const g=clearGroup('g-curve'), pts=[];
-  for (let i=0;i<=CONFIG.CURVE_PTS;i++) {
-    const x=c.xMin+i/CONFIG.CURVE_PTS*(c.xMax-c.xMin);
-    pts.push(`${c.toSvgX(x)},${c.toSvgY(Math_.normalPDF(x,mean,sd))}`);
+  const g=clearG('g-curve'), pts=[];
+  for (let i=0;i<=CFG.CURVE_PTS;i++) {
+    const x=c.xMin+i/CFG.CURVE_PTS*(c.xMax-c.xMin);
+    pts.push(`${c.toSvgX(x)},${c.toSvgY(M.normalPDF(x,mean,sd))}`);
   }
-  g.appendChild(svgEl('polyline',{points:pts.join(' '),fill:'none',stroke:'#fff','stroke-width':'0.5','stroke-linejoin':'round'}));
+  g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:tc('rgba(26,20,14,0.35)','rgba(240,240,240,0.45)'),'stroke-width':'0.75','stroke-linejoin':'round'}));
 }
 
 /* ================================================================
-   DRAW MARKERS — σ labels at TOP of chart, inside the plot area
+  DRAW MARKERS
 ================================================================ */
 function drawMarkers(c, mean, sd) {
-  const g=clearGroup('g-markers');
-  const labelY = c.plotT + 11; // inside top of chart
-
-  for (const zone of CONFIG.ZONES) {
+  const g = clearG('g-markers');
+  const LIGHT_COLS = ['#3a3028','#7a6858','#a89880'];
+  const DARK_COLS  = ['#c8c8c8','#909090','#606060'];
+  const COLS = isDark ? DARK_COLS : LIGHT_COLS;
+  for (let zi=0; zi<CFG.ZONES.length; zi++) {
+    const zone=CFG.ZONES[zi], col=COLS[zi];
     for (const side of [-1,1]) {
       const dx=mean+side*zone.mult*sd;
       if (dx<c.xMin||dx>c.xMax) continue;
       const sx=c.toSvgX(dx);
-      g.appendChild(svgEl('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:zone.line,'stroke-width':'1.5'}));
-      const t=svgEl('text',{x:sx,y:labelY,'text-anchor':'middle','font-size':'9',
-        'font-family':'Courier Prime,Courier New,monospace',fill:zone.line,'font-weight':'bold'});
-      t.textContent=(side>0?'+':'')+(side*zone.mult)+'σ';
-      g.appendChild(t);
+      g.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:col,'stroke-width':'0.75'}));
+      const t=el('text',{x:sx,y:c.plotB+13,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:col,'font-weight':'500'});
+      t.textContent=(side>0?'+':'')+(side*zone.mult)+'σ'; g.appendChild(t);
     }
   }
   const mx=c.toSvgX(mean);
-  g.appendChild(svgEl('line',{x1:mx,y1:c.plotT,x2:mx,y2:c.plotB,stroke:'#ffffff','stroke-width':'1.5'}));
-  const mu=svgEl('text',{x:mx,y:labelY,'text-anchor':'middle','font-size':'9',
-    'font-family':'Courier Prime,Courier New,monospace',fill:'#fff','font-weight':'bold'});
+  const muCol = tc('#1a1410','#ffffff');
+  g.appendChild(el('line',{x1:mx,y1:c.plotT,x2:mx,y2:c.plotB,stroke:muCol,'stroke-width':'1'}));
+  const mu=el('text',{x:mx,y:c.plotB+13,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:muCol,'font-weight':'600'});
   mu.textContent='μ'; g.appendChild(mu);
 }
 
 /* ================================================================
-   DRAW X-AXIS LABELS
+  X-AXIS LABELS
 ================================================================ */
-function drawXAxisLabels(mean, sd) {
-  const con = document.getElementById('x-axis-labels'); con.innerHTML='';
-  const c   = makeCoords(mean, sd);
-  const first = Math.ceil(c.xMin / 25) * 25;
-  const ticks = [];
-  for (let v = first; v <= c.xMax + 0.001; v += 25) ticks.push(v);
-  const skip = Math.max(1, Math.ceil(ticks.length / 17));
-
-  ticks.forEach((val, i) => {
-    if (i % skip !== 0 && i !== ticks.length - 1) return;
-    const sigmaFrac = Math.abs(val - mean) / sd;
-    const sigmaRnd  = Math.round(sigmaFrac * 10) / 10;
-    const sigmaInt  = Math.round(sigmaRnd);
-
-    let sub = '', cls = 'x-tick';
-    const isExactMean = Math.abs(val - mean) < 0.5;
-    if (isExactMean) {
-      sub = 'μ'; cls += ' is-mean';
-    } else if (Number.isInteger(sigmaInt) && sigmaInt >= 1 && sigmaInt <= 3 && Math.abs(sigmaRnd - sigmaInt) < 0.08) {
-      const sign = val > mean ? '+' : '';
-      sub  = sign + sigmaInt + 'σ';
-      cls += sigmaInt===1?' is-1sd':sigmaInt===2?' is-2sd':' is-3sd';
+function drawXAxis(mean, sd) {
+  const con=document.getElementById('x-axis-labels'); con.innerHTML='';
+  const c=makeCoords(mean,sd);
+  const first=Math.ceil(c.xMin/25)*25;
+  const ticks=[];
+  for (let v=first;v<=c.xMax+0.001;v+=25) ticks.push(v);
+  const skip=Math.max(1,Math.ceil(ticks.length/17));
+  ticks.forEach((val,i)=>{
+    if (i%skip!==0 && i!==ticks.length-1) return;
+    const sf=Math.abs(val-mean)/sd;
+    const sfR=Math.round(sf*10)/10;
+    const sfI=Math.round(sfR);
+    let sub='', cls='x-tick';
+    const isExactMean=Math.abs(val-mean)<0.5;
+    if (isExactMean) { sub='μ'; cls+=' is-mean'; }
+    else if (Number.isInteger(sfI)&&sfI>=1&&sfI<=3&&Math.abs(sfR-sfI)<0.08) {
+      sub=(val>mean?'+':'')+sfI+'σ';
+      cls+=sfI===1?' is-1sd':sfI===2?' is-2sd':' is-3sd';
     }
-
-    const d = document.createElement('div');
-    d.className = cls;
-    const frac = (val - c.xMin) / (c.xMax - c.xMin);
-    d.style.position = 'absolute';
-    d.style.left = (frac * 100) + '%';
-    d.style.transform = 'translateX(-50%)';
-    d.innerHTML = val.toLocaleString() + (sub ? `<span class="sub">${sub}</span>` : '');
+    const d=document.createElement('div');
+    d.className=cls;
+    const frac=(val-c.xMin)/(c.xMax-c.xMin);
+    d.style.cssText=`position:absolute;left:${frac*100}%;transform:translateX(-50%);padding-top:6px;`;
+    d.innerHTML=val.toLocaleString()+(sub?`<span class="sub">${sub}</span>`:'');
     con.appendChild(d);
   });
 }
 
 /* ================================================================
-   UPDATE STATS
+  UPDATE STATS
 ================================================================ */
-function updateStats(mean, sd) {
+function updateStats(mean,sd) {
   const f=v=>v.toLocaleString(undefined,{maximumFractionDigits:2});
   document.getElementById('val-m3').textContent=f(mean-3*sd);
   document.getElementById('val-m2').textContent=f(mean-2*sd);
@@ -972,519 +1331,429 @@ function updateStats(mean, sd) {
 }
 
 /* ================================================================
-   VOL ZONE TOGGLE
+  TOOLTIP
+================================================================ */
+const tip=document.getElementById('tooltip');
+document.getElementById('g-hitzones').addEventListener('mouseover',e=>{
+  const r=e.target; if (!r.dataset.strike) return;
+  document.getElementById('tt-strike').textContent='Strike: '+Number(r.dataset.strike).toLocaleString();
+  document.getElementById('tt-vol').textContent='IV: '+r.dataset.vol;
+  const callV=parseFloat(r.dataset.call)||0;
+  const putV=parseFloat(r.dataset.put)||0;
+  const oicV=parseFloat(r.dataset.oicall)||0;
+  const oipV=parseFloat(r.dataset.oiput)||0;
+  const allMax=Math.max(callV,putV,oicV,oipV,1);
+  const fmt2=v=>v>=1000?(v/1000).toFixed(1)+'k':v.toString();
+  const bars=document.getElementById('tt-bars');
+  bars.innerHTML='';
+  const mkRow=(lbl,v,col)=>{
+    const pct=Math.round(v/allMax*100);
+    bars.insertAdjacentHTML('beforeend',`
+      <div class="tt-row">
+        <div class="tt-row-label">${lbl}</div>
+        <div class="tt-bar-line">
+          <span class="tt-bar-lbl" style="color:${col}">${lbl.includes('Call')?'C':'P'}</span>
+          <div class="tt-bar-track"><div class="tt-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+          <span class="tt-bar-val" style="color:${col}">${fmt2(v)}</span>
+        </div>
+      </div>`);
+  };
+  mkRow('Call Vol',callV,'#1a3a6b');
+  mkRow('Put Vol',putV,'#c9920a');
+  if (oicV) mkRow('OI Calls',oicV,'#1a3a6b');
+  if (oipV) mkRow('OI Puts',oipV,'#c9920a');
+  tip.style.display='block';
+});
+document.getElementById('g-hitzones').addEventListener('mousemove',e=>{
+  tip.style.left=(e.clientX+14)+'px';
+  tip.style.top=(e.clientY-10)+'px';
+});
+document.getElementById('g-hitzones').addEventListener('mouseleave',()=>{ tip.style.display='none'; });
+
+/* ================================================================
+  ZOOM + PAN
+================================================================ */
+const MIN_ZOOM=0.25, MAX_ZOOM=16;
+function adjustZoom(factor) {
+  state.zoom=Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,state.zoom*factor));
+  document.getElementById('zoom-label').textContent=state.zoom>=1?Math.round(state.zoom)+'×':'1/'+Math.round(1/state.zoom)+'×';
+  render();
+}
+function resetZoom() {
+  state.zoom=1.0; state.panOffset=0;
+  document.getElementById('zoom-label').textContent='1×';
+  render();
+}
+document.getElementById('chart').addEventListener('wheel',e=>{
+  e.preventDefault();
+  const rect=e.currentTarget.getBoundingClientRect();
+  const frac=(e.clientX-rect.left)/rect.width;
+  const c=makeCoords(state.mean,state.sd>0?state.sd:50);
+  const mousePrice=c.xMin+frac*(c.xMax-c.xMin);
+  const factor=e.deltaY<0?1.15:1/1.15;
+  const newZoom=Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,state.zoom*factor));
+  const newHalf=CFG.X_HALF/newZoom;
+  state.panOffset=mousePrice-state.mean-(frac-0.5)*2*newHalf;
+  state.zoom=newZoom;
+  document.getElementById('zoom-label').textContent=newZoom>=1?Math.round(newZoom)+'×':'1/'+Math.round(1/newZoom)+'×';
+  render();
+},{passive:false});
+
+let dragState=null;
+document.getElementById('chart').addEventListener('mousedown',e=>{
+  if (e.button!==0) return;
+  dragState={startX:e.clientX,startPan:state.panOffset,chartW:e.currentTarget.getBoundingClientRect().width};
+  e.currentTarget.style.cursor='grabbing';
+});
+document.addEventListener('mousemove',e=>{
+  if (!dragState) return;
+  const dx=e.clientX-dragState.startX;
+  const range=(CFG.X_HALF/state.zoom)*2;
+  state.panOffset=dragState.startPan-dx*(range/dragState.chartW);
+  render();
+});
+document.addEventListener('mouseup',()=>{
+  if (dragState) { dragState=null; document.getElementById('chart').style.cursor='grab'; }
+});
+
+let touchState=null;
+document.getElementById('chart').addEventListener('touchstart',e=>{
+  if (e.touches.length===1) {
+    touchState={startX:e.touches[0].clientX,startPan:state.panOffset,chartW:e.currentTarget.getBoundingClientRect().width};
+  } else if (e.touches.length===2) {
+    touchState={pinchDist:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),startZoom:state.zoom};
+  }
+},{passive:true});
+document.getElementById('chart').addEventListener('touchmove',e=>{
+  if (!touchState) return;
+  if (e.touches.length===1&&touchState.startPan!==undefined) {
+    const dx=e.touches[0].clientX-touchState.startX;
+    const range=(CFG.X_HALF/state.zoom)*2;
+    state.panOffset=touchState.startPan-dx*(range/touchState.chartW);
+    render();
+  } else if (e.touches.length===2&&touchState.pinchDist) {
+    const dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    state.zoom=Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,touchState.startZoom*(dist/touchState.pinchDist)));
+    document.getElementById('zoom-label').textContent=state.zoom>=1?Math.round(state.zoom)+'×':'1/'+Math.round(1/state.zoom)+'×';
+    render();
+  }
+},{passive:true});
+document.getElementById('chart').addEventListener('touchend',()=>{ touchState=null; });
+
+/* ================================================================
+  VOL ZONE TOGGLE
 ================================================================ */
 function toggleVolZone() {
-  volZoneEnabled = !volZoneEnabled;
+  volZoneVisible = !volZoneVisible;
   const btn = document.getElementById('btn-vol-toggle');
-  const controls = document.getElementById('vol-zone-controls');
-  btn.textContent = volZoneEnabled ? 'ON' : 'OFF';
-  btn.classList.toggle('off', !volZoneEnabled);
-  controls.style.opacity = volZoneEnabled ? '1' : '0.3';
-  controls.style.pointerEvents = volZoneEnabled ? '' : 'none';
+  if (volZoneVisible) {
+    btn.textContent = '● On';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '○ Off';
+    btn.classList.remove('active');
+  }
   render();
 }
 
 /* ================================================================
-   SD GAUGE — vertical panel showing where future price sits in σ space
-   Zones coloured -3→-2→-1→0→+1→+2→+3σ top-to-bottom.
-   Blue arrow + price label animate smoothly to exact fractional position.
+  SD GAUGE SIDEBAR
 ================================================================ */
-function drawSdGauge() {
-  const svg = document.getElementById('sd-gauge');
-  while (svg.firstChild) svg.removeChild(svg.firstChild);
-
-  const W = 72, H = 442;
-  const PAD_T = 10, PAD_B = 10;
-  const trackH = H - PAD_T - PAD_B;
-
-  // Zones from top (+3σ) to bottom (-3σ) — 6 bands
-  const bands = [
-    { label: '+3σ', color: '#ffdd00', alpha: 0.18 },
-    { label: '+2σ', color: '#ff9900', alpha: 0.22 },
-    { label: '+1σ', color: '#ff4444', alpha: 0.18 },
-    { label: '−1σ', color: '#ff4444', alpha: 0.18 },
-    { label: '−2σ', color: '#ff9900', alpha: 0.22 },
-    { label: '−3σ', color: '#ffdd00', alpha: 0.18 },
+function initGaugeBands() {
+  const track = document.getElementById('sdg-track');
+  if (!track) return;
+  // Remove old bands (keep arrow-wrap)
+  Array.from(track.querySelectorAll('.sdg-band')).forEach(b=>b.remove());
+  const lightBands = [
+    { from: 3, to: 4,  bg: 'rgba(160,140,120,0.08)' },
+    { from: 2, to: 3,  bg: 'rgba(140,120,100,0.14)' },
+    { from: 1, to: 2,  bg: 'rgba(120,100,80,0.10)' },
+    { from: 0, to: 1,  bg: 'rgba(100,80,60,0.07)' },
+    { from:-1, to: 0,  bg: 'rgba(100,80,60,0.07)' },
+    { from:-2, to:-1,  bg: 'rgba(120,100,80,0.10)' },
+    { from:-3, to:-2,  bg: 'rgba(140,120,100,0.14)' },
+    { from:-4, to:-3,  bg: 'rgba(160,140,120,0.08)' },
   ];
-  const bandH = trackH / bands.length;
-
-  const mk = (tag, attrs) => {
-    const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    for (const [k,v] of Object.entries(attrs)) e.setAttribute(k, v);
-    return e;
-  };
-  const txt = (x, y, s, attrs) => {
-    const e = mk('text', { x, y, ...attrs });
-    e.textContent = s;
-    return e;
-  };
-
-  // Background
-  svg.appendChild(mk('rect', { x:0, y:0, width:W, height:H, fill:'#000' }));
-
-  // Draw bands
-  bands.forEach((b, i) => {
-    const by = PAD_T + i * bandH;
-    const hex = b.color;
-    // parse hex to rgb for rgba
-    const r = parseInt(hex.slice(1,3),16);
-    const g = parseInt(hex.slice(3,5),16);
-    const bl = parseInt(hex.slice(5,7),16);
-    svg.appendChild(mk('rect', {
-      x: 28, y: by, width: 28, height: bandH,
-      fill: `rgba(${r},${g},${bl},${b.alpha})`,
-      stroke: `rgba(${r},${g},${bl},0.35)`,
-      'stroke-width': '0.5',
-    }));
+  const darkBands = [
+    { from: 3, to: 4,  bg: 'rgba(80,80,80,0.12)' },
+    { from: 2, to: 3,  bg: 'rgba(70,70,70,0.22)' },
+    { from: 1, to: 2,  bg: 'rgba(100,100,100,0.18)' },
+    { from: 0, to: 1,  bg: 'rgba(130,130,130,0.15)' },
+    { from:-1, to: 0,  bg: 'rgba(130,130,130,0.15)' },
+    { from:-2, to:-1,  bg: 'rgba(100,100,100,0.18)' },
+    { from:-3, to:-2,  bg: 'rgba(70,70,70,0.22)' },
+    { from:-4, to:-3,  bg: 'rgba(80,80,80,0.12)' },
+  ];
+  const bandDefs = isDark ? darkBands : lightBands;
+  // sigma range rendered: -4 to +4 (clamped visually), total = 8 sigma units
+  const RANGE = 8, MIN = -4;
+  bandDefs.forEach(b=>{
+    const topPct    = ((4 - b.to)   / RANGE) * 100;
+    const heightPct = ((b.to - b.from) / RANGE) * 100;
+    const div = document.createElement('div');
+    div.className = 'sdg-band';
+    div.style.cssText = `top:${topPct}%;height:${heightPct}%;background:${b.bg};`;
+    // thin separator lines at exact sigma multiples
+    if ([-3,-2,-1,0,1,2,3].includes(b.from)) {
+      div.style.borderTop = `1px solid ${tc('rgba(26,20,14,0.08)','rgba(255,255,255,0.07)')}`;
+    }
+    track.insertBefore(div, document.getElementById('sdg-arrow-wrap'));
   });
+}
 
-  // σ tick lines and labels (7 lines for -3 to +3)
-  const sigmas = [3, 2, 1, 0, -1, -2, -3];
-  const mean = state.mean, sd = state.sd > 0 ? state.sd : 75;
-
-  sigmas.forEach((s, i) => {
-    const ty = PAD_T + i * bandH; // top line at each sigma boundary
-    const lineCol = s === 0 ? '#ffffff'
-      : Math.abs(s) === 1 ? '#ff4444'
-      : Math.abs(s) === 2 ? '#ff9900' : '#ffdd00';
-    // tick line across the track
-    svg.appendChild(mk('line', {
-      x1: 24, y1: ty, x2: 56, y2: ty,
-      stroke: lineCol, 'stroke-width': s === 0 ? '1.2' : '0.7', opacity: '0.7'
-    }));
-    // sigma label on the left
-    const lbl = s === 0 ? 'μ' : (s > 0 ? '+' : '') + s + 'σ';
-    svg.appendChild(txt(22, ty + 3, lbl, {
-      'text-anchor': 'end',
-      'font-size': '7',
-      'font-family': 'Courier Prime,Courier New,monospace',
-      fill: lineCol,
-      'font-weight': s === 0 ? 'bold' : 'normal',
-    }));
-    // price at this sigma level (small, right side)
-    const priceAtSigma = mean + s * sd;
-    svg.appendChild(txt(58, ty + 3, Math.round(priceAtSigma).toLocaleString(), {
-      'text-anchor': 'start',
-      'font-size': '5.5',
-      'font-family': 'Courier Prime,Courier New,monospace',
-      fill: '#444',
-    }));
-  });
-
-  // Bottom edge line
-  svg.appendChild(mk('line', {
-    x1: 24, y1: PAD_T + trackH, x2: 56, y2: PAD_T + trackH,
-    stroke: '#ffdd00', 'stroke-width': '0.7', opacity: '0.7'
-  }));
-
-  // --- Future price indicator ---
+function updateGauge() {
   if (!liveData || liveData.future == null) return;
+  const fx  = liveData.future;
+  const mean = state.mean;
+  const sd   = state.sd > 0 ? state.sd : 75;
+  if (sd <= 0) return;
 
-  const future = liveData.future;
-  // Clamp to ±3.5σ for display
-  const sigmaPos = (future - mean) / sd;  // positive = above mean
-  const clamped  = Math.max(-3.5, Math.min(3.5, sigmaPos));
+  // Compute sigma position of future price relative to μ
+  const sigmaPos = (fx - mean) / sd;  // e.g. -1.7 means 70% into -2 to -1 zone
 
-  // Map: +3σ → PAD_T (top), -3σ → PAD_T + trackH (bottom)
-  // sigmaPos=+3 → y=PAD_T, sigmaPos=-3 → y=PAD_T+trackH
-  const fracFromTop = (3 - clamped) / 6;  // 0 at top (+3σ), 1 at bottom (-3σ)
-  const arrowY = PAD_T + fracFromTop * trackH;
+  // Map sigmaPos to track % (clamped -4..+4)
+  const clamped = Math.max(-4, Math.min(4, sigmaPos));
+  const RANGE = 8;
+  const topPct = ((4 - clamped) / RANGE) * 100;
 
-  // Percentage within the current band
-  const bandIdx  = Math.floor((3 - clamped));  // 0=top band
-  const bandFrac = ((3 - clamped) - Math.floor(3 - clamped)); // 0–1 within band
-  const pctInBand = Math.round(bandFrac * 100);
+  const arrow = document.getElementById('sdg-arrow-wrap');
+  if (arrow) arrow.style.top = topPct + '%';
 
-  // Arrow shaft (horizontal, pointing right into the track)
-  const ARROW_X1 = 4, ARROW_X2 = 28;
-  svg.appendChild(mk('line', {
-    x1: ARROW_X1, y1: arrowY, x2: ARROW_X2 - 4, y2: arrowY,
-    stroke: '#3b82f6', 'stroke-width': '2',
-  }));
-  // Arrowhead
-  svg.appendChild(mk('polygon', {
-    points: `${ARROW_X2-4},${arrowY-4} ${ARROW_X2},${arrowY} ${ARROW_X2-4},${arrowY+4}`,
-    fill: '#3b82f6',
-  }));
+  // Zone name + pct within zone
+  const absS   = Math.abs(sigmaPos);
+  const floor  = Math.floor(absS);
+  const pctIn  = Math.round((absS - floor) * 100);
+  const side   = sigmaPos >= 0 ? '+' : '−';
+  const zFloor = Math.min(floor, 3);
+  const zCeil  = Math.min(floor + 1, 3);
 
-  // Future price label above arrow
-  const priceLabel = future.toLocaleString();
-  svg.appendChild(txt(ARROW_X1, arrowY - 5, priceLabel, {
-    'text-anchor': 'start',
-    'font-size': '7',
-    'font-family': 'Courier Prime,Courier New,monospace',
-    fill: '#60a5fa',
-    'font-weight': 'bold',
-  }));
+  let zoneName, zonePct, zoneColor;
+  if (absS <= 1) {
+    zoneName  = `${side}${zFloor}σ → ${side}${zCeil}σ`;
+    zonePct   = `${pctIn}% from ${side}${zFloor}σ`;
+    zoneColor = tc('#1a1410','#e0e0e0');
+  } else if (absS <= 2) {
+    zoneName  = `${side}${zFloor}σ → ${side}${zCeil}σ`;
+    zonePct   = `${pctIn}% from ${side}${zFloor}σ`;
+    zoneColor = tc('#4a4038','#b0b0b0');
+  } else if (absS <= 3) {
+    zoneName  = `${side}${zFloor}σ → ${side}${zCeil}σ`;
+    zonePct   = `${pctIn}% from ${side}${zFloor}σ`;
+    zoneColor = tc('#7a7068','#808080');
+  } else {
+    zoneName  = `Beyond ${side}3σ`;
+    zonePct   = `${(absS - 3).toFixed(2)}σ outside`;
+    zoneColor = tc('#a09088','#505050');
+  }
+  // Special case: near mean
+  if (absS < 0.05) { zoneName = 'At μ (mean)'; zonePct = ''; }
 
-  // σ position label below arrow  e.g. "+0.34σ" or "−1.22σ"
-  const sigLbl = (sigmaPos >= 0 ? '+' : '') + sigmaPos.toFixed(2) + 'σ';
-  svg.appendChild(txt(ARROW_X1, arrowY + 13, sigLbl, {
-    'text-anchor': 'start',
-    'font-size': '6.5',
-    'font-family': 'Courier Prime,Courier New,monospace',
-    fill: '#60a5fa',
-    opacity: '0.85',
-  }));
+  const zn = document.getElementById('sdg-zone-name');
+  const zp = document.getElementById('sdg-zone-pct');
+  if (zn) { zn.textContent = zoneName; zn.style.color = zoneColor; }
+  if (zp) zp.textContent = zonePct;
 
-  // % within band label
-  const bandLabelIdx = Math.min(Math.max(Math.floor(3 - clamped), 0), 5);
-  const bandName = bands[bandLabelIdx] ? bands[bandLabelIdx].label : '';
-  const pctLbl = pctInBand + '% into ' + bandName;
-  svg.appendChild(txt(W/2, H - 2, pctLbl, {
-    'text-anchor': 'middle',
-    'font-size': '5.5',
-    'font-family': 'Courier Prime,Courier New,monospace',
-    fill: '#555',
-  }));
+  const pv = document.getElementById('sdg-price-val');
+  const pc = document.getElementById('sdg-price-chg');
+  if (pv) pv.textContent = fx.toLocaleString();
+  if (pc) pc.textContent = 'Δ ' + (liveData.futChg || '—');
+
+  const dot = document.getElementById('sdg-dot');
+  if (dot) dot.classList.remove('stale');
 }
 
 /* ================================================================
-   ZOOM SLIDER — replaces scroll-wheel zoom and +/- buttons
-================================================================ */
-function resetZoom() {
-  state.zoom      = 1.0;
-  state.panOffset = 0;
-  document.getElementById('zoom-slider').value = zoomToSlider(1.0);
-  document.getElementById('zoom-display').textContent = '1×';
-  document.getElementById('pan-slider').value = 0;
-  render();
-}
-
-document.getElementById('zoom-slider').addEventListener('input', () => {
-  const v = parseFloat(document.getElementById('zoom-slider').value);
-  state.zoom = sliderToZoom(v);
-  document.getElementById('zoom-display').textContent = fmtZoom(state.zoom);
-  render();
-});
-
-/* ================================================================
-   PAN SCROLLBAR — replaces drag-to-pan
-================================================================ */
-document.getElementById('pan-slider').addEventListener('input', () => {
-  const v = parseFloat(document.getElementById('pan-slider').value);
-  state.panOffset = panSliderToOffset(v);
-  render();
-});
-
-/* ================================================================
-   RENDER
+  RENDER
 ================================================================ */
 function render() {
+  const mean=state.mean;
+  const sd=state.sd>0?state.sd:75;
+  const c=makeCoords(mean,sd);
+  drawGrid(c);
+  drawZones(c,mean,sd);
+  if (volZoneVisible) drawVolZone(c); else clearG('g-volzone');
+  drawFutureLine(c);
+  drawDotGrid(c,mean,sd);
+  drawBars(c,liveData?liveData.rows:null);
+  drawOIBars(c,oiData?oiData.rows:null);
+  drawVolCurve(c,liveData?liveData.rows:null);
+  drawCurve(c,mean,sd);
+  drawMarkers(c,mean,sd);
+  drawArrow(c,liveData?liveData.rows:null);
+  drawXAxis(mean,sd);
+  updateStats(mean,sd);
+  updateGauge();
+}
+
+/* ================================================================
+  DATA FETCH
+================================================================ */
+async function fetchData() {
+  const pulse=document.getElementById('pulse-dot');
+  const statusTxt=document.getElementById('status-txt');
+  pulse.classList.remove('stale');
+  statusTxt.textContent='Fetching…';
+  const err=document.getElementById('err-banner');
+  err.style.display='none';
   try {
-    const mean = state.mean;
-    const sd   = state.sd > 0 ? state.sd : 75;
-    const c    = makeCoords(mean, sd);
-    drawGrid(c);
-    drawZones(c,mean,sd);
-    drawVolZone(c);
-    drawFutureLine(c);
-    drawDotGrid(c,mean,sd);
-    drawBars(c, liveData?liveData.rows:null);
-    drawOIBars(c, oiData?oiData.rows:null);
-    drawVolCurve(c, liveData?liveData.rows:null);
-    drawCurve(c,mean,sd);
-    drawMarkers(c,mean,sd);
-    drawArrow(c, liveData?liveData.rows:null);
-    drawXAxisLabels(mean,sd);
-    updateStats(mean,sd);
-    drawSdGauge();
+    const bust='?bust='+Date.now();
+    const [r1,r2]=await Promise.all([fetch(DATA_URL+bust),fetch(OI_URL+bust)]);
+    if (!r1.ok) throw new Error('Intraday fetch failed: '+r1.status);
+    const text=await r1.text();
+    liveData=parseIntraday(text);
+    if (r2.ok) {
+      const oit=await r2.text();
+      oiData=parseIntraday(oit);
+    }
+    const now=new Date();
+    statusTxt.textContent='Updated '+now.toLocaleTimeString();
+    // Update title
+    if (liveData.title) document.getElementById('h-title').textContent=liveData.title.includes('SD')?liveData.title:'SD Visualizer — '+liveData.title;
+    // Compute SD from IV + DTE
+    if (liveData.future!=null && liveData.vol && liveData.dte) {
+      const iv=parseFloat(liveData.vol), dte=parseFloat(liveData.dte), fut=liveData.future;
+      if (!isNaN(iv)&&!isNaN(dte)&&dte>0) {
+        computedSd=fut*(iv/100)*Math.sqrt(dte/252);
+        const sdInp=document.getElementById('inp-sd');
+        if (sdInp.value===''||sdInp.dataset.auto==='1') {
+          sdInp.value=computedSd.toFixed(1);
+          sdInp.dataset.auto='1';
+          state.sd=computedSd;
+          document.getElementById('sd-formula-lbl').textContent=`IV:${iv}% DTE:${dte} → σ=${computedSd.toFixed(0)}`;
+        }
+      }
+    }
+    // Set mean from future
+    const meanInp=document.getElementById('inp-mean');
+    if (liveData.future!=null && (meanInp.value===''||meanInp.dataset.auto==='1')) {
+      meanInp.value=liveData.future;
+      meanInp.dataset.auto='1';
+      state.mean=liveData.future;
+      document.getElementById('mean-lbl').textContent=`Future: ${liveData.future.toLocaleString()}  Δ: ${liveData.futChg}`;
+    }
+    // Vol slider init
+    const slider=document.getElementById('inp-vol-price');
+    if (liveData.future!=null && slider.dataset.init!=='1') {
+      const fut=liveData.future;
+      slider.min=Math.floor(fut-400);
+      slider.max=Math.ceil(fut+400);
+      slider.value=fut;
+      document.getElementById('vol-price-display').textContent=snapToGrid(fut).toLocaleString();
+      autoInterpolateVol(snapToGrid(fut));
+      slider.dataset.init='1';
+    }
+    render();
+    updateGauge();
   } catch(e) {
-    console.error('render() error:', e);
-    document.getElementById('err-banner').style.display='block';
-    document.getElementById('err-banner').textContent='⚠ Render error: '+e.message+' — '+e.stack;
+    err.style.display='block';
+    err.textContent='⚠ Error fetching data: '+e.message;
+    pulse.classList.add('stale');
+    statusTxt.textContent='Fetch failed';
+    const sdot=document.getElementById('sdg-dot');
+    if (sdot) sdot.classList.add('stale');
   }
 }
 
 /* ================================================================
-   TOOLTIP
-   No drag state or scroll cooldown needed — zoom/pan are now sliders
-   so the chart surface is 100% available for hover at all times.
+  VOL SLIDER
 ================================================================ */
-const tooltip = document.getElementById('tooltip');
-let lastHitStrike = null;
-
-function positionTooltip(clientX, clientY) {
-  const tw = tooltip.offsetWidth  || 240;
-  const th = tooltip.offsetHeight || 160;
-  const vw = window.innerWidth, vh = window.innerHeight;
-  let left = clientX + 18, top = clientY - 24;
-  if (left + tw > vw - 10) left = clientX - tw - 18;
-  if (top  + th > vh - 10) top  = vh - th - 10;
-  if (top < 6) top = 6;
-  tooltip.style.left = left + 'px';
-  tooltip.style.top  = top  + 'px';
+function snapToGrid(v) { return Math.round(v/25)*25; }
+function autoInterpolateVol(price) {
+  if (!liveData||!liveData.rows) return;
+  const rows=liveData.rows.filter(r=>r.vol!=null&&r.vol>0);
+  const below=rows.filter(r=>r.strike<=price).slice(-1)[0];
+  const above=rows.filter(r=>r.strike>=price)[0];
+  let iv=NaN;
+  if (below&&above) {
+    const t=below.strike===above.strike?0:(price-below.strike)/(above.strike-below.strike);
+    iv=(below.vol+t*(above.vol-below.vol))*100;
+  }
+  const volInp=document.getElementById('inp-vol-val');
+  if (!isNaN(iv)) { volInp.value=iv.toFixed(2); volInp.dataset.auto='1'; }
+  else volInp.value='';
 }
 
-function buildTooltip(r, clientX, clientY) {
-  const strike = parseFloat(r.dataset.strike);
-  const iCall  = parseInt(r.dataset.call)   || 0;
-  const iPut   = parseInt(r.dataset.put)    || 0;
-  const oiCall = parseInt(r.dataset.oicall) || 0;
-  const oiPut  = parseInt(r.dataset.oiput)  || 0;
-  const vol    = r.dataset.vol || '—';
-
-  document.getElementById('tt-strike').textContent = strike.toLocaleString();
-  document.getElementById('tt-vol').textContent    = 'IV ' + vol;
-
-  const peak = Math.max(iCall, iPut, oiCall, oiPut, 1);
-
-  function rowHTML(label, val, color) {
-    const pct = Math.round(val / peak * 100);
-    return `<div class="tt-row">
-      <span class="tt-side-label">${label}</span>
-      <div class="tt-bar-track">
-        <div class="tt-bar-fill" style="width:${pct}%;background:${color};opacity:0.85;"></div>
-      </div>
-      <span class="tt-count" style="color:${color}">${val.toLocaleString()}</span>
-    </div>`;
-  }
-
-  const CALL_COLOR    = '#60a5fa';
-  const PUT_COLOR     = '#facc15';
-  const OI_CALL_COLOR = '#22c55e';
-  const OI_PUT_COLOR  = '#ff4444';
-
-  const hasOI = oiCall > 0 || oiPut > 0;
-
-  document.getElementById('tt-section').innerHTML =
-    `<div class="tt-block">
-      <div class="tt-block-label">Intraday contracts</div>
-      ${rowHTML('Call', iCall, CALL_COLOR)}
-      ${rowHTML('Put',  iPut,  PUT_COLOR)}
-    </div>` +
-    (hasOI
-      ? `<div class="tt-block">
-          <div class="tt-block-label">Open interest</div>
-          ${rowHTML('Call', oiCall, OI_CALL_COLOR)}
-          ${rowHTML('Put',  oiPut,  OI_PUT_COLOR)}
-        </div>`
-      : `<div class="tt-block" style="color:#333;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;">No OI data</div>`
-    );
-
-  tooltip.style.display = 'block';
-  positionTooltip(clientX, clientY);
-}
-
-document.getElementById('chart').addEventListener('mousemove', e => {
-  const r = e.target.closest('[data-strike]');
-  if (!r) { tooltip.style.display = 'none'; lastHitStrike = null; return; }
-
-  if (r.dataset.strike !== lastHitStrike) {
-    lastHitStrike = r.dataset.strike;
-    buildTooltip(r, e.clientX, e.clientY);
-  } else {
-    positionTooltip(e.clientX, e.clientY);
-  }
-});
-
-document.getElementById('chart').addEventListener('mouseleave', () => {
-  tooltip.style.display = 'none';
-  lastHitStrike = null;
-});
-
-/* ================================================================
-   INPUTS
-================================================================ */
-function readInputs() {
-  const m = parseFloat(document.getElementById('inp-mean').value);
-  if (!isNaN(m) && m > 0) {
-    state.mean = m;
-    document.getElementById('inp-mean').dataset.userEdited = 'true';
-    document.getElementById('btn-mean-reset').style.display = 'inline-block';
-  }
-  recomputeSd();
+document.getElementById('inp-vol-price').addEventListener('input',function(){
+  const snapped=snapToGrid(parseInt(this.value));
+  document.getElementById('vol-price-display').textContent=snapped.toLocaleString();
+  if (document.getElementById('inp-vol-val').dataset.auto==='1') autoInterpolateVol(snapped);
   render();
-}
+});
 
+/* ================================================================
+  INPUT WIRING
+================================================================ */
+document.getElementById('inp-mean').addEventListener('input',function(){
+  const v=parseFloat(this.value);
+  if (!isNaN(v)) { state.mean=v; this.dataset.auto=''; document.getElementById('btn-mean-reset').style.display='inline-block'; render(); }
+});
+document.getElementById('inp-sd').addEventListener('input',function(){
+  const v=parseFloat(this.value);
+  if (!isNaN(v)&&v>0) { state.sd=v; this.dataset.auto=''; render(); }
+});
+document.getElementById('inp-vol-val').addEventListener('input',function(){
+  this.dataset.auto=''; render();
+});
+document.getElementById('btn-refresh').addEventListener('click',()=>{
+  fetchData();
+  resetCountdown(parseInt(document.getElementById('sel-interval').value)/1000);
+});
 function resetMean() {
-  const inp = document.getElementById('inp-mean');
-  inp.dataset.userEdited = '';
-  document.getElementById('btn-mean-reset').style.display = 'none';
-  document.getElementById('mean-lbl').textContent = 'Auto = Future price · type to override';
-  if (liveData && liveData.future != null) {
-    state.mean = liveData.future;
-    inp.value  = liveData.future;
-    recomputeSd();
+  if (liveData&&liveData.future!=null) {
+    state.mean=liveData.future;
+    document.getElementById('inp-mean').value=liveData.future;
+    document.getElementById('inp-mean').dataset.auto='1';
+    document.getElementById('btn-mean-reset').style.display='none';
     render();
   }
 }
-document.getElementById('inp-mean').addEventListener('input', readInputs);
-
-document.getElementById('inp-vol-price').addEventListener('input', () => {
-  updateVolZoneFromSlider();
-});
-
-function snapTo25(val) {
-  return Math.round(val / 5) * 5;
-}
-
-function updateVolZoneFromSlider() {
-  const raw    = parseFloat(document.getElementById('inp-vol-price').value);
-  const price  = snapTo25(raw);
-  document.getElementById('vol-price-display').textContent = price.toLocaleString();
-
-  const volInput = document.getElementById('inp-vol-val');
-  if (liveData && liveData.rows && volInput.dataset.userEdited !== 'true') {
-    const rows  = liveData.rows.filter(r => r.vol != null && r.vol > 0);
-    const below = rows.filter(r => r.strike <= price).slice(-1)[0];
-    const above = rows.filter(r => r.strike >= price)[0];
-    if (below && above) {
-      const t   = below.strike === above.strike ? 0
-        : (price - below.strike) / (above.strike - below.strike);
-      const vol = below.vol + t * (above.vol - below.vol);
-      volInput.value = (vol * 100).toFixed(2);
-    } else {
-      volInput.value = '';
-    }
-  }
-  render();
-}
-
-function initVolPriceSlider() {
-  if (!liveData) return;
-  const c      = makeCoords(state.mean, state.sd > 0 ? state.sd : 50);
-  const slider = document.getElementById('inp-vol-price');
-  const lo = Math.floor(c.xMin / 25) * 25;
-  const hi = Math.ceil (c.xMax / 25) * 25;
-  slider.min  = lo;
-  slider.max  = hi;
-  slider.step = 5;
-  const startPrice = liveData.future != null
-    ? snapTo25(liveData.future)
-    : snapTo25((lo + hi) / 2);
-  slider.value = startPrice;
-  document.getElementById('vol-price-display').textContent = startPrice.toLocaleString();
-  updateVolZoneFromSlider();
-}
-
-document.getElementById('inp-vol-val').addEventListener('input', () => {
-  document.getElementById('inp-vol-val').dataset.userEdited = 'true';
-  render();
-});
-document.getElementById('inp-vol-val').addEventListener('change', () => {
-  if (document.getElementById('inp-vol-val').value === '')
-    document.getElementById('inp-vol-val').dataset.userEdited = '';
-});
 
 /* ================================================================
-   COMPUTE SD
+  AUTO-REFRESH
 ================================================================ */
-function recomputeSd() {
-  const mean = state.mean;
-  if (!liveData) return;
-  const iv  = parseFloat(liveData.vol);
-  const dte = parseFloat(liveData.dte);
-  if (!isNaN(iv) && !isNaN(dte) && dte > 0 && iv > 0) {
-    computedSd = Math.round(mean * (iv / 100) * Math.sqrt(dte / 252) * 10) / 10;
-    const sdInput = document.getElementById('inp-sd');
-    if (sdInput.dataset.userEdited !== 'true') {
-      sdInput.value = computedSd;
-      state.sd = computedSd;
-    }
-    document.getElementById('sd-formula-lbl').textContent =
-      `${mean.toLocaleString()} × ${iv}% × √(${dte}/252) = ${computedSd}`;
-  }
-}
-
-document.getElementById('inp-sd').addEventListener('input', () => {
-  const s = parseFloat(document.getElementById('inp-sd').value);
-  document.getElementById('inp-sd').dataset.userEdited = 'true';
-  if (!isNaN(s) && s > 0) { state.sd = s; render(); }
-});
-document.getElementById('inp-sd').addEventListener('change', () => {
-  const s = parseFloat(document.getElementById('inp-sd').value);
-  if (isNaN(s) || s <= 0) {
-    document.getElementById('inp-sd').dataset.userEdited = '';
-    recomputeSd(); render();
-  }
-});
-
-/* ================================================================
-   COUNTDOWN
-================================================================ */
-function startCountdown(ms) {
-  if (countdownTimer) clearInterval(countdownTimer);
-  countdownSec = Math.round(ms/1000);
-  const el = document.getElementById('countdown');
-  el.textContent = 'Next refresh in '+countdownSec+'s';
-  countdownTimer = setInterval(()=>{
+function resetCountdown(sec) {
+  countdownSec=sec;
+  clearInterval(countdownTimer);
+  countdownTimer=setInterval(()=>{
     countdownSec--;
-    if (countdownSec<=0) {
-      el.textContent='Refreshing…';
-    } else {
-      el.textContent='Next refresh in '+countdownSec+'s';
-    }
+    document.getElementById('countdown').textContent='Next refresh in '+countdownSec+'s';
+    if (countdownSec<=0) { clearInterval(countdownTimer); }
   },1000);
 }
-
-/* ================================================================
-   FETCH
-================================================================ */
-async function fetchAndRender() {
-  const dot=document.getElementById('pulse-dot');
-  const statusEl=document.getElementById('status-txt');
-  const errBanner=document.getElementById('err-banner');
-  dot.classList.remove('stale');
-  statusEl.textContent='Fetching…';
-  try {
-    const cb = Date.now();
-    const [resIntraday, resOI] = await Promise.all([
-      fetch(DATA_URL + '?cb=' + cb, {cache:'no-store'}),
-      fetch(OI_URL   + '?cb=' + cb, {cache:'no-store'}),
-    ]);
-    if (!resIntraday.ok) throw new Error('Intraday HTTP ' + resIntraday.status);
-    liveData = parseIntraday(await resIntraday.text());
-    if (resOI.ok) {
-      oiData = parseIntraday(await resOI.text());
-    }
-    const meanInput = document.getElementById('inp-mean');
-    if (liveData.future != null && meanInput.dataset.userEdited !== 'true') {
-      state.mean = liveData.future;
-      meanInput.value = liveData.future;
-      document.getElementById('mean-lbl').textContent = 'Auto = Future price · type to override';
-    } else if (meanInput.dataset.userEdited === 'true') {
-      document.getElementById('mean-lbl').textContent = 'Locked to your input · refresh to reset';
-    }
-    recomputeSd();
-    initVolPriceSlider();
-    document.getElementById('h-title').textContent=liveData.title+' · SD Visualizer';
-    document.getElementById('h-sub').textContent='DTE: '+liveData.dte+' · Future: '+(liveData.future||'—')+' ('+liveData.futChg+') · IV: '+liveData.vol;
-    errBanner.style.display='none';
-    statusEl.textContent='Updated '+new Date().toLocaleTimeString();
-    document.getElementById('footer-txt').textContent=
-      'Source · github.com/pageth/Vol2VolData · updated '+new Date().toLocaleTimeString();
-  } catch(err) {
-    dot.classList.add('stale');
-    statusEl.textContent='Fetch failed · '+new Date().toLocaleTimeString();
-    errBanner.style.display='block';
-    errBanner.textContent='⚠ '+err.message;
-  }
-  render();
-  const ms=parseInt(document.getElementById('sel-interval').value,10);
-  startCountdown(ms);
-}
-
 function scheduleRefresh() {
-  if (refreshTimer) clearInterval(refreshTimer);
-  const ms=parseInt(document.getElementById('sel-interval').value,10);
-  refreshTimer=setInterval(fetchAndRender,ms);
-  startCountdown(ms);
+  clearInterval(refreshTimer);
+  const ms=parseInt(document.getElementById('sel-interval').value);
+  refreshTimer=setInterval(()=>{ fetchData(); resetCountdown(ms/1000); },ms);
+  resetCountdown(ms/1000);
 }
-
-document.getElementById('sel-interval').addEventListener('change',()=>{ scheduleRefresh(); fetchAndRender(); });
-document.getElementById('btn-refresh').addEventListener('click',()=>{ fetchAndRender(); });
+document.getElementById('sel-interval').addEventListener('change',()=>{ scheduleRefresh(); });
 
 /* ================================================================
-   INIT
+  THEME TOGGLE
 ================================================================ */
-// Set zoom slider to midpoint (= 1× zoom)
-document.getElementById('zoom-slider').value = zoomToSlider(1.0);
-render();
-document.getElementById('inp-sd').dataset.userEdited = 'true';
-fetchAndRender();
+let isDark = false;
+
+function toggleTheme() {
+  isDark = !isDark;
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : '');
+  document.getElementById('btn-theme').textContent = isDark ? '◐' : '◑';
+  // re-init gauge bands (they're injected DOM, not CSS-var driven)
+  initGaugeBands();
+  // re-render so SVG inline colors update (they can't use CSS vars)
+  render();
+  updateGauge();
+}
+
+// Resolve a color based on current theme — for SVG elements that can't use CSS vars
+function tc(light, dark) { return isDark ? dark : light; }
+
+/* ================================================================
+  BOOT
+================================================================ */
+fetchData();
 scheduleRefresh();
+initGaugeBands();
+render();
 </script>
 </body>
 </html>
