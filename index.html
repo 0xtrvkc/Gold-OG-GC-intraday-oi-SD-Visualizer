@@ -696,6 +696,7 @@ footer {
         <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()" style="display:none">↺ reset</button>
         <span id="gold-price-badge" style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;"></span>
       </div>
+      <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;margin-top:3px;line-height:1.4;">⏳ Fetching GC=F via Yahoo… (~2–4 s)</div>
     </div>
 
     <div class="input-group">
@@ -1208,8 +1209,11 @@ function drawVolCurve(c, rows) {
   if (visible.length<2) return;
   const vols = visible.map(r=>r.vol);
   const minV=Math.min(...vols), maxV=Math.max(...vols);
-  const availH = (c.plotB-c.plotT)*CFG.BAR_MAX_FRAC;
-  function toVolY(v) { return M.scale(v,minV,maxV,c.plotB,c.plotB-availH); }
+  // Vol curve: taller (72% of plot height) and lifted 20px from the bottom baseline
+  const volBottom = c.plotB - 20;
+  const availH = (c.plotB-c.plotT)*0.72;
+  const volTop  = volBottom - availH;
+  function toVolY(v) { return M.scale(v,minV,maxV,volBottom,volTop); }
   const pts = visible.map(r=>`${c.toSvgX(r.strike)},${toVolY(r.vol)}`);
   g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:tc('#9a9080','#707070'),'stroke-width':'1','stroke-linejoin':'round','stroke-linecap':'round'}));
   const fmtV = v=>(v*100).toFixed(1)+'%';
@@ -1802,14 +1806,21 @@ async function fetchGoldPrice() {
   // Don't overwrite if the user has manually edited the field
   if (meanInp.value !== '' && meanInp.dataset.auto !== '1' && meanInp.dataset.auto !== 'gold') return;
 
+  const statusEl = document.getElementById('mean-fetch-status');
+  function setStatus(msg, color) {
+    if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--fg3)'; }
+  }
+
   // Use 1d interval/5d range — last candle open = today's 1D session open
   // This matches the "Open" field on investing.com gold futures 1D chart
   const YF_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=1d&range=5d';
   const PROXY  = 'https://api.allorigins.win/get?url=' + encodeURIComponent(YF_URL);
 
+  setStatus('⏳ Fetching GC=F via Yahoo… (~2–4 s)');
   try {
     const res     = await fetch(PROXY, { cache: 'no-store' });
     if (!res.ok) throw new Error('proxy ' + res.status);
+    setStatus('⏳ Parsing response…');
     const wrapper = await res.json();
     if (!wrapper.contents) throw new Error('empty proxy response');
     const data    = JSON.parse(wrapper.contents);
@@ -1858,6 +1869,8 @@ async function fetchGoldPrice() {
       document.getElementById('gold-price-badge').style.color = chgRaw >= 0
         ? 'var(--oi-call)' : 'var(--danger)';
       goldPriceFetched = true;
+      setStatus('✓ GC=F loaded · source: Yahoo Finance (allorigins proxy)', 'var(--fg2)');
+      setTimeout(() => setStatus(''), 8000);
 
       // If liveData doesn't have a future yet, use gold open for slider too
       const slider = document.getElementById('inp-vol-price');
@@ -1872,6 +1885,7 @@ async function fetchGoldPrice() {
     }
   } catch(e) {
     console.warn('Gold price fetch failed:', e.message);
+    setStatus('⚠ GC=F fetch failed — enter mean manually', 'var(--danger)');
   }
 }
 
