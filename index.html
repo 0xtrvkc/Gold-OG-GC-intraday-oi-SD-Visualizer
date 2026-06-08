@@ -89,15 +89,21 @@ svg#chart { display: block; width: 100%; height: 442px; cursor: grab; }
 /* TOOLTIP */
 #tooltip {
   position: fixed; pointer-events: none; display: none;
-  background: #111; border: 1px solid #fff;
-  padding: 8px 14px; font-family: var(--font); font-size: 0.845rem;
-  letter-spacing: 0.04em; z-index: 100; white-space: nowrap;
-  line-height: 1.6;
+  background: #0d0d0d; border: 1px solid #444;
+  padding: 10px 14px; font-family: var(--font); font-size: 0.82rem;
+  letter-spacing: 0.03em; z-index: 100; white-space: nowrap;
+  min-width: 200px;
 }
-#tooltip .tt-strike { font-weight: 700; font-size: 1rem; margin-bottom: 2px; }
-#tooltip .tt-call   { color: var(--call-line); }
-#tooltip .tt-put    { color: var(--put-line); }
-#tooltip .tt-vol    { color: var(--vol-line); }
+#tt-strike { font-weight: 700; font-size: 1rem; color: #fff; margin-bottom: 6px; border-bottom: 1px solid #222; padding-bottom: 5px; }
+#tt-vol    { color: #a78bfa; font-size: 0.78rem; margin-bottom: 8px; }
+#tt-bars   { display: flex; flex-direction: column; gap: 4px; }
+.tt-row    { display: flex; flex-direction: column; gap: 2px; }
+.tt-row-label { font-size: 0.72rem; color: #555; text-transform: uppercase; letter-spacing: 0.08em; }
+.tt-bar-line  { display: flex; align-items: center; gap: 6px; }
+.tt-bar-track { flex: 1; height: 10px; background: #1a1a1a; position: relative; min-width: 80px; }
+.tt-bar-fill  { height: 100%; position: absolute; left: 0; top: 0; }
+.tt-bar-val   { font-size: 0.82rem; font-weight: 700; min-width: 36px; text-align: right; }
+.tt-bar-lbl   { font-size: 0.75rem; min-width: 32px; color: #666; }
 
 /* X-AXIS */
 .x-axis-labels {
@@ -216,18 +222,18 @@ footer { font-size: 0.78rem; color: #555; border-top: 1px solid #333; padding-to
 
   <div class="chart-wrapper">
     <svg id="chart" viewBox="0 0 800 300" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <g id="g-grid"></g>
-      <g id="g-zones"></g>
-      <g id="g-volzone"></g>
-      <g id="g-futurezone"></g>
-      <g id="g-dotgrid"></g>
-      <g id="g-future"></g>
-      <g id="g-bars"></g>
-      <g id="g-oibars"></g>
-      <g id="g-volcurve"></g>
-      <g id="g-curve"></g>
-      <g id="g-markers"></g>
-      <g id="g-arrow"></g>
+      <g id="g-grid"       style="pointer-events:none"></g>
+      <g id="g-zones"      style="pointer-events:none"></g>
+      <g id="g-volzone"    style="pointer-events:none"></g>
+      <g id="g-futurezone" style="pointer-events:none"></g>
+      <g id="g-dotgrid"    style="pointer-events:none"></g>
+      <g id="g-future"     style="pointer-events:none"></g>
+      <g id="g-bars"       style="pointer-events:none"></g>
+      <g id="g-oibars"     style="pointer-events:none"></g>
+      <g id="g-volcurve"   style="pointer-events:none"></g>
+      <g id="g-curve"      style="pointer-events:none"></g>
+      <g id="g-markers"    style="pointer-events:none"></g>
+      <g id="g-arrow"      style="pointer-events:none"></g>
       <g id="g-hitzones"></g>
     </svg>
   </div>
@@ -272,10 +278,9 @@ footer { font-size: 0.78rem; color: #555; border-top: 1px solid #333; padding-to
 
 <!-- TOOLTIP -->
 <div id="tooltip">
-  <div class="tt-strike" id="tt-strike"></div>
-  <div class="tt-call"   id="tt-call"></div>
-  <div class="tt-put"    id="tt-put"></div>
-  <div class="tt-vol"    id="tt-vol"></div>
+  <div id="tt-strike"></div>
+  <div id="tt-vol"></div>
+  <div id="tt-bars"></div>
 </div>
 
 <script>
@@ -589,9 +594,11 @@ function drawBars(c, rows) {
   const visible = rows.filter(r=>r.strike>=c.xMin && r.strike<=c.xMax);
   if (!visible.length) return;
 
-  // Intraday bars use their own scale
-  const maxVol = Math.max(...visible.map(r=>Math.max(r.call||0,r.put||0)),1);
-  const availH   = (c.plotB-c.plotT)*CONFIG.BAR_MAX_FRAC;
+  // Dynamic height: tallest bar gets 85% of plot height so it nearly fills the chart
+  const oiVisible = oiData ? (oiData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+  const allVols   = [...visible, ...oiVisible].map(r=>Math.max(r.call||0,r.put||0));
+  const maxVol    = Math.max(...allVols, 1);
+  const availH    = (c.plotB - c.plotT) * 0.85;
   const strikes  = visible.map(r=>r.strike);
   const gap      = strikes.length>1 ? c.toSvgX(strikes[1])-c.toSvgX(strikes[0]) : 10;
   const halfBar  = Math.max(gap*0.22, 1.5);
@@ -616,8 +623,8 @@ function drawBars(c, rows) {
     const hitRect = svgEl('rect',{
       x: cx-halfBar*2-0.5, y: c.plotB-maxH,
       width: halfBar*4+1, height: maxH,
-      fill: 'transparent', stroke: 'none',
-      style: 'cursor:pointer',
+      fill: 'rgba(0,0,0,0.01)', stroke: 'none',
+      style: 'cursor:crosshair',
     });
     hitRect.dataset.strike = r.strike;
     hitRect.dataset.call   = r.call;
@@ -646,9 +653,11 @@ function drawOIBars(c, rows) {
   const visible = rows.filter(r => r.strike >= c.xMin && r.strike <= c.xMax);
   if (!visible.length) return;
 
-  // OI bars use their own scale
-  const maxVol = Math.max(...visible.map(r => Math.max(r.call||0, r.put||0)), 1);
-  const availH   = (c.plotB - c.plotT) * CONFIG.BAR_MAX_FRAC;
+  // Shared scale with intraday bars
+  const intradayVisible = liveData ? (liveData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+  const allVols = [...visible, ...intradayVisible].map(r=>Math.max(r.call||0,r.put||0));
+  const maxVol  = Math.max(...allVols, 1);
+  const availH  = (c.plotB - c.plotT) * 0.85;
 
   const strikes  = visible.map(r => r.strike);
   const gap      = strikes.length > 1 ? c.toSvgX(strikes[1]) - c.toSvgX(strikes[0]) : 10;
@@ -802,7 +811,7 @@ function drawMarkers(c, mean, sd) {
     }
   }
   const mx=c.toSvgX(mean);
-  g.appendChild(svgEl('line',{x1:mx,y1:c.plotT,x2:mx,y2:c.plotB,stroke:'#22c55e','stroke-width':'1.5'}));
+  g.appendChild(svgEl('line',{x1:mx,y1:c.plotT,x2:mx,y2:c.plotB,stroke:'#ffffff','stroke-width':'1.5'}));
   
   // CHANGED: Changed y from c.plotB-6 to c.plotB+14 (moved down by 20px)
   const mu=svgEl('text',{x:mx,y:c.plotB+14,'text-anchor':'middle','font-size':'9','font-family':'Courier Prime,Courier New,monospace',fill:'#fff','font-weight':'bold'});
@@ -1002,22 +1011,85 @@ function render() {
 }
 
 /* ================================================================
-   TOOLTIP — click on bar hit zone
+   TOOLTIP — hover on bar hit zone
 ================================================================ */
 const tooltip = document.getElementById('tooltip');
-document.getElementById('chart').addEventListener('click', e => {
-  const r = e.target.closest('[data-strike]');
-  if (!r) { tooltip.style.display='none'; return; }
-  document.getElementById('tt-strike').textContent = 'Strike  ' + parseFloat(r.dataset.strike).toLocaleString();
-  document.getElementById('tt-call').textContent   = '● Call (intraday)  ' + r.dataset.call + ' · OI ' + (r.dataset.oicall !== '' ? r.dataset.oicall : '—');
-  document.getElementById('tt-put').textContent    = '● Put  (intraday)  ' + r.dataset.put  + ' · OI ' + (r.dataset.oiput  !== '' ? r.dataset.oiput  : '—');
-  document.getElementById('tt-vol').textContent    = '● IV      ' + r.dataset.vol;
+let lastHitStrike = null;
+
+function buildTooltip(r, clientX, clientY) {
+  const strike   = parseFloat(r.dataset.strike);
+  const iCall    = parseInt(r.dataset.call)   || 0;
+  const iPut     = parseInt(r.dataset.put)    || 0;
+  const oiCall   = parseInt(r.dataset.oicall) || 0;
+  const oiPut    = parseInt(r.dataset.oiput)  || 0;
+  const vol      = r.dataset.vol;
+
+  document.getElementById('tt-strike').textContent = strike.toLocaleString();
+  document.getElementById('tt-vol').textContent    = 'IV  ' + vol;
+
+  // Scale bars relative to the max across all 4 values
+  const peak = Math.max(iCall, iPut, oiCall, oiPut, 1);
+
+  function barHTML(val, color, label) {
+    const pct = Math.round(val / peak * 100);
+    return `<div class="tt-bar-line">
+      <span class="tt-bar-lbl">${label}</span>
+      <div class="tt-bar-track">
+        <div class="tt-bar-fill" style="width:${pct}%;background:${color};"></div>
+      </div>
+      <span class="tt-bar-val" style="color:${color}">${val.toLocaleString()}</span>
+    </div>`;
+  }
+
+  document.getElementById('tt-bars').innerHTML = `
+    <div class="tt-row">
+      <div class="tt-row-label">Intraday</div>
+      ${barHTML(iCall, '#60a5fa', 'Call')}
+      ${barHTML(iPut,  '#facc15', 'Put')}
+    </div>
+    <div style="border-top:1px solid #1e1e1e;margin:4px 0;"></div>
+    <div class="tt-row">
+      <div class="tt-row-label">Open Interest</div>
+      ${barHTML(oiCall, '#fde047', 'Call')}
+      ${barHTML(oiPut,  '#22d3ee', 'Put')}
+    </div>`;
+
+  // Position tooltip — flip if near right edge
+  const tw = 220, th = 140;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let left = clientX + 16, top = clientY - 20;
+  if (left + tw > vw - 10) left = clientX - tw - 16;
+  if (top + th > vh - 10)  top  = vh - th - 10;
+  tooltip.style.left    = left + 'px';
+  tooltip.style.top     = top  + 'px';
   tooltip.style.display = 'block';
-  tooltip.style.left = (e.clientX+14)+'px';
-  tooltip.style.top  = (e.clientY-10)+'px';
+}
+
+document.getElementById('chart').addEventListener('mousemove', e => {
+  // Don't show tooltip while panning
+  if (dragState) { tooltip.style.display = 'none'; return; }
+
+  const r = e.target.closest('[data-strike]');
+  if (!r) { tooltip.style.display = 'none'; lastHitStrike = null; return; }
+
+  if (r.dataset.strike !== lastHitStrike) {
+    lastHitStrike = r.dataset.strike;
+    buildTooltip(r, e.clientX, e.clientY);
+  } else {
+    // Just reposition
+    const tw = tooltip.offsetWidth || 220;
+    const th = tooltip.offsetHeight || 140;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = e.clientX + 16, top = e.clientY - 20;
+    if (left + tw > vw - 10) left = e.clientX - tw - 16;
+    if (top  + th > vh - 10) top  = vh - th - 10;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top  = top  + 'px';
+  }
 });
-document.addEventListener('click', e => {
-  if (!e.target.closest('#chart')) tooltip.style.display='none';
+document.getElementById('chart').addEventListener('mouseleave', () => {
+  tooltip.style.display = 'none';
+  lastHitStrike = null;
 });
 
 /* ================================================================
