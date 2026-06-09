@@ -73,6 +73,10 @@
 [data-theme="dark"] .stat-cell.z1 .stat-val { color: #d0c8c0; }
 [data-theme="dark"] .stat-cell.z2 .stat-val { color: #908880; }
 [data-theme="dark"] .stat-cell.z3 .stat-val { color: #606060; }
+[data-theme="dark"] .stat-cell.oi-call .stat-val  { color: #4a7ac8; }
+[data-theme="dark"] .stat-cell.oi-put  .stat-val  { color: #d4a830; }
+[data-theme="dark"] .stat-cell.int-call .stat-val { color: #4a7ac8; }
+[data-theme="dark"] .stat-cell.int-put  .stat-val { color: #d4a830; }
 [data-theme="dark"] .sdg-label.m3 { color: #505050; }
 [data-theme="dark"] .sdg-label.m2 { color: #707070; }
 [data-theme="dark"] .sdg-label.m1 { color: #a0a0a0; }
@@ -299,6 +303,10 @@ input[type="range"] {
 .stat-cell.z1 .stat-val { color: #2a2420; }
 .stat-cell.z2 .stat-val { color: #5a5248; }
 .stat-cell.z3 .stat-val { color: #8a8278; }
+.stat-cell.oi-call .stat-val { color: var(--oi-call); }
+.stat-cell.oi-put  .stat-val { color: var(--oi-put);  }
+.stat-cell.int-call .stat-val { color: var(--call-line); }
+.stat-cell.int-put  .stat-val { color: var(--put-line);  }
 
 /* ── TOGGLE BUTTON ── */
 .toggle-btn {
@@ -766,16 +774,12 @@ footer {
 
   <!-- STATS BAR -->
   <div class="stats-bar">
-    <div class="stat-cell z3"><div class="stat-lbl">μ − 3σ</div><div class="stat-val" id="val-m3">—</div></div>
-    <div class="stat-cell z2"><div class="stat-lbl">μ − 2σ</div><div class="stat-val" id="val-m2">—</div></div>
-    <div class="stat-cell z1"><div class="stat-lbl">μ − 1σ</div><div class="stat-val" id="val-m1">—</div></div>
-    <div class="stat-cell">   <div class="stat-lbl">μ (Mean)</div><div class="stat-val" id="val-mean">—</div></div>
-    <div class="stat-cell z1"><div class="stat-lbl">μ + 1σ</div><div class="stat-val" id="val-p1">—</div></div>
-    <div class="stat-cell z2"><div class="stat-lbl">μ + 2σ</div><div class="stat-val" id="val-p2">—</div></div>
-    <div class="stat-cell z3"><div class="stat-lbl">μ + 3σ</div><div class="stat-val" id="val-p3">—</div></div>
-    <div class="stat-cell">   <div class="stat-lbl">Intraday Calls</div><div class="stat-val" id="val-calls">—</div></div>
-    <div class="stat-cell">   <div class="stat-lbl">Intraday Puts</div><div class="stat-val" id="val-puts">—</div></div>
-    <div class="stat-cell">   <div class="stat-lbl">IV / Fut Δ</div><div class="stat-val" id="val-vol">—</div></div>
+    <div class="stat-cell int-call"><div class="stat-lbl">Intraday Calls</div><div class="stat-val" id="val-calls">—</div></div>
+    <div class="stat-cell oi-call"> <div class="stat-lbl">OI Calls</div><div class="stat-val" id="val-oi-calls">—</div></div>
+    <div class="stat-cell int-put"> <div class="stat-lbl">Intraday Puts</div><div class="stat-val" id="val-puts">—</div></div>
+    <div class="stat-cell oi-put">  <div class="stat-lbl">OI Puts</div><div class="stat-val" id="val-oi-puts">—</div></div>
+    <div class="stat-cell">         <div class="stat-lbl">IV</div><div class="stat-val" id="val-vol">—</div></div>
+    <div class="stat-cell">         <div class="stat-lbl">Fut Δ</div><div class="stat-val" id="val-futchg">—</div></div>
   </div>
 
   <!-- ZOOM ROW -->
@@ -1462,18 +1466,27 @@ function drawXAxis(mean, sd) {
   UPDATE STATS
 ================================================================ */
 function updateStats(mean,sd) {
-  const f=v=>v.toLocaleString(undefined,{maximumFractionDigits:2});
-  document.getElementById('val-m3').textContent=f(mean-3*sd);
-  document.getElementById('val-m2').textContent=f(mean-2*sd);
-  document.getElementById('val-m1').textContent=f(mean-1*sd);
-  document.getElementById('val-mean').textContent=f(mean);
-  document.getElementById('val-p1').textContent=f(mean+1*sd);
-  document.getElementById('val-p2').textContent=f(mean+2*sd);
-  document.getElementById('val-p3').textContent=f(mean+3*sd);
   if (liveData) {
-    document.getElementById('val-calls').textContent=liveData.callTotal;
-    document.getElementById('val-puts').textContent=liveData.putTotal;
-    document.getElementById('val-vol').textContent=liveData.vol+' / '+liveData.futChg;
+    document.getElementById('val-calls').textContent = liveData.callTotal;
+    document.getElementById('val-puts').textContent  = liveData.putTotal;
+    document.getElementById('val-vol').textContent   = liveData.vol ? liveData.vol + '%' : '—';
+    const chgEl = document.getElementById('val-futchg');
+    const chgStr = liveData.futChg || '—';
+    chgEl.textContent = chgStr;
+    const chgNum = parseFloat(chgStr);
+    if (!isNaN(chgNum)) {
+      chgEl.style.color = chgNum >= 0 ? 'var(--oi-call)' : 'var(--danger)';
+    } else {
+      chgEl.style.color = '';
+    }
+  }
+  // OI totals — sum call and put volumes from oiData rows
+  if (oiData && oiData.rows && oiData.rows.length) {
+    const fmt3 = v => v >= 1000000 ? (v/1000000).toFixed(2)+'M' : v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toLocaleString();
+    const totalOiCalls = oiData.rows.reduce((s,r) => s + (r.call||0), 0);
+    const totalOiPuts  = oiData.rows.reduce((s,r) => s + (r.put ||0), 0);
+    document.getElementById('val-oi-calls').textContent = fmt3(totalOiCalls);
+    document.getElementById('val-oi-puts').textContent  = fmt3(totalOiPuts);
   }
 }
 
