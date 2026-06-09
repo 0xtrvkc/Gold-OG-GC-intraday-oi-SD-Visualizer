@@ -190,7 +190,7 @@ h1 {
   align-items: end;
 }
 
-.input-group { display: flex; flex-direction: column; gap: 6px; }
+.input-group { display: flex; flex-direction: column; gap: 6px; justify-content: flex-end; }
 
 .input-label {
   font-size: 10px;
@@ -543,6 +543,32 @@ svg#chart {
   cursor: grab;
 }
 
+/* ── CHART SCROLLBAR ── */
+.chart-scroll-bar {
+  width: calc(100% - 130px); /* matches chart width (minus sidebar) */
+  height: 14px;
+  margin-bottom: 8px;
+  position: relative;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.chart-scroll-thumb {
+  position: absolute;
+  top: 2px;
+  height: calc(100% - 4px);
+  background: var(--line2);
+  border-radius: 2px;
+  cursor: grab;
+  transition: background 0.12s;
+  min-width: 24px;
+}
+.chart-scroll-thumb:hover  { background: var(--fg3); }
+.chart-scroll-thumb:active { cursor: grabbing; background: var(--fg2); }
+
 /* ── X-AXIS ── */
 .x-axis {
   border: 1px solid var(--line2);
@@ -690,22 +716,24 @@ footer {
   <!-- INPUTS -->
   <div class="input-panel">
     <div class="input-group">
+      <span id="gold-price-badge" style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;"></span>
       <div class="input-label">Mean (μ)</div>
       <div class="input-sub" id="mean-lbl">Auto = GC=F gold futures</div>
       <input type="number" id="inp-mean" value="" placeholder="fetching GC=F…" step="1">
-      <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
-        <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()" style="display:none">↺ reset</button>
-        <span id="gold-price-badge" style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;"></span>
-      </div>
+      <button id="btn-mean-reset" class="btn-reset" onclick="resetMean()" style="display:none">↺ reset</button>
     </div>
 
     <div class="input-group">
+      <div style="display:flex;align-items:center;justify-content:flex-end;">
+        <button id="btn-sd-mode" class="toggle-btn active" onclick="toggleSdMode()" title="Switch between auto-computed and manual σ">⟳ Auto</button>
+      </div>
       <div class="input-label">Std Dev (σ)</div>
       <div class="input-sub" id="sd-formula-lbl">IV × Mean × √(DTE/365)</div>
       <input type="number" id="inp-sd" value="" placeholder="auto" step="0.1" min="0.1" data-auto="1">
     </div>
 
     <div class="input-group">
+      <div style="font-size:10px;min-height:15px;"></div>
       <div class="input-label">Auto-Refresh</div>
       <div class="input-sub">Fetch interval</div>
       <select id="sel-interval">
@@ -822,6 +850,11 @@ footer {
         <div class="sdg-price-chg" id="sdg-price-chg">—</div>
       </div>
     </div>
+  </div>
+
+  <!-- CHART SCROLLBAR -->
+  <div class="chart-scroll-bar" id="chart-scroll-bar">
+    <div class="chart-scroll-thumb" id="chart-scroll-thumb"></div>
   </div>
 
   <!-- X-AXIS -->
@@ -1534,8 +1567,70 @@ document.getElementById('chart').addEventListener('touchmove',e=>{
 document.getElementById('chart').addEventListener('touchend',()=>{ touchState=null; });
 
 /* ================================================================
-  CHART VIEW TOGGLE  (Both / Intraday only / OI only)
+  CHART SCROLLBAR (pan left-right)
+  The thumb width represents how much of the total visible range
+  is currently shown; dragging it shifts state.panOffset.
 ================================================================ */
+const SCROLL_HALF = 500; // virtual half-range in price units covered by scrollbar
+
+function updateScrollThumb() {
+  const bar   = document.getElementById('chart-scroll-bar');
+  const thumb = document.getElementById('chart-scroll-thumb');
+  if (!bar || !thumb) return;
+  const sd    = state.sd > 0 ? state.sd : 75;
+  const half  = CFG.X_HALF / state.zoom;
+  const total = SCROLL_HALF * 2;
+  const visible = Math.min(1, (half * 2) / total);
+  const thumbW  = Math.max(14, visible * 100); // % width
+  thumb.style.width = thumbW + '%';
+  const maxPan  = Math.max(0, SCROLL_HALF - half);
+  const normPan = maxPan > 0 ? (state.panOffset + maxPan) / (maxPan * 2) : 0.5;
+  const maxLeft = 100 - thumbW;
+  const thumbLeft = Math.max(0, Math.min(maxLeft, normPan * maxLeft));
+  thumb.style.left = thumbLeft + '%';
+}
+
+(function(){
+  const bar   = document.getElementById('chart-scroll-bar');
+  const thumb = document.getElementById('chart-scroll-thumb');
+
+  // Drag the thumb
+  let sbDrag = null;
+  thumb.addEventListener('mousedown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const half = CFG.X_HALF / state.zoom;
+    sbDrag = {
+      startX:   e.clientX,
+      startPan: state.panOffset,
+      barW:     bar.getBoundingClientRect().width,
+      maxPan:   Math.max(0, SCROLL_HALF - half),
+    };
+  });
+  document.addEventListener('mousemove', e => {
+    if (!sbDrag) return;
+    const dx    = e.clientX - sbDrag.startX;
+    const total = SCROLL_HALF * 2;
+    const pxPerPrice = sbDrag.barW / total;
+    state.panOffset = Math.max(-sbDrag.maxPan,
+      Math.min(sbDrag.maxPan, sbDrag.startPan + dx / pxPerPrice));
+    render();
+  });
+  document.addEventListener('mouseup', () => { sbDrag = null; });
+
+  // Click on track background — jump to that position
+  bar.addEventListener('click', e => {
+    if (e.target === thumb) return;
+    const rect   = bar.getBoundingClientRect();
+    const frac   = (e.clientX - rect.left) / rect.width;
+    const half   = CFG.X_HALF / state.zoom;
+    const maxPan = Math.max(0, SCROLL_HALF - half);
+    state.panOffset = Math.max(-maxPan, Math.min(maxPan, (frac - 0.5) * SCROLL_HALF * 2));
+    render();
+  });
+})();
+
+
 function setChartView(mode) {
   chartView = mode;
   // Update all three buttons
@@ -1582,6 +1677,36 @@ function toggleVolZone() {
     btn.classList.remove('active');
   }
   render();
+}
+
+/* ================================================================
+  SD AUTO / MANUAL TOGGLE
+================================================================ */
+let sdAutoMode = true; // starts in auto
+
+function toggleSdMode() {
+  sdAutoMode = !sdAutoMode;
+  const btn  = document.getElementById('btn-sd-mode');
+  const inp  = document.getElementById('inp-sd');
+  if (sdAutoMode) {
+    btn.textContent = '⟳ Auto';
+    btn.classList.add('active');
+    inp.dataset.auto = '1';
+    inp.placeholder  = 'auto';
+    // Re-trigger a compute cycle via fetchData result or re-render
+    const sdLbl = document.getElementById('sd-formula-lbl');
+    if (computedSd && computedSd > 0) {
+      state.sd = computedSd;
+      inp.value = computedSd.toFixed(1);
+      render();
+    }
+  } else {
+    btn.textContent = '✎ Manual';
+    btn.classList.remove('active');
+    inp.dataset.auto = '';
+    inp.placeholder  = 'enter σ…';
+    inp.focus();
+  }
 }
 
 /* ================================================================
@@ -1745,6 +1870,7 @@ function _render() {
   drawXAxis(mean,sd);
   updateStats(mean,sd);
   updateGauge();
+  if (typeof updateScrollThumb === 'function') updateScrollThumb();
 }
 
 /* ================================================================
@@ -1792,7 +1918,7 @@ async function fetchData() {
         const meanForSd = state.mean > 0 ? state.mean : fut;
         computedSd=meanForSd*(ivAtFut/100)*Math.sqrt(dte/365);
         const sdInp=document.getElementById('inp-sd');
-        if (sdInp.value===''||sdInp.dataset.auto==='1') {
+        if (sdAutoMode && (sdInp.value===''||sdInp.dataset.auto==='1')) {
           sdInp.value=computedSd.toFixed(1);
           sdInp.dataset.auto='1';
           state.sd=computedSd;
@@ -1894,7 +2020,19 @@ document.getElementById('inp-mean').addEventListener('input',function(){
 });
 document.getElementById('inp-sd').addEventListener('input',function(){
   const v=parseFloat(this.value);
-  if (!isNaN(v)&&v>0) { state.sd=v; this.dataset.auto=''; render(); }
+  if (!isNaN(v)&&v>0) {
+    state.sd=v;
+    this.dataset.auto='';
+    // If user types a value, automatically switch to manual mode
+    if (sdAutoMode) {
+      sdAutoMode = false;
+      const btn = document.getElementById('btn-sd-mode');
+      btn.textContent = '✎ Manual';
+      btn.classList.remove('active');
+      this.placeholder = 'enter σ…';
+    }
+    render();
+  }
 });
 document.getElementById('inp-vol-val').addEventListener('input',function(){
   this.dataset.auto=''; render();
