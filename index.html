@@ -1148,8 +1148,9 @@ function getBarScale(c) {
   DRAW BARS (INTRADAY) + HIT ZONES
   Stacked: call fills from bottom, put stacks on top — one solid bar.
   Side-by-side: call left, put right (original layout).
+  showBars = false  → skip visual intraday rects but still build hit zones
 ================================================================ */
-function drawBars(c, rows) {
+function drawBars(c, rows, showBars = true) {
   const g  = clearG('g-bars');
   const gh = clearG('g-hitzones');
 
@@ -1174,35 +1175,37 @@ function drawBars(c, rows) {
   }
 
   // ── Intraday bars ──────────────────────────────────────────────
-  for (const r of intVisible) {
-    const cx = c.toSvgX(r.strike);
-    if (barStackMode) {
-      const hC = (r.call||0) / maxVol * availH;
-      const hP = (r.put ||0) / maxVol * availH;
-      const bx = cx - halfBar;
-      const bw = halfBar * 2;
-      // Call segment (bottom)
-      if (hC > 0)
-        g.appendChild(el('rect',{x:bx, y:c.plotB-hC, width:bw, height:hC,
-          fill:'rgba(26,58,107,0.22)', stroke:'#1a3a6b', 'stroke-width':'0.5'}));
-      // Put segment (stacked on top of call)
-      if (hP > 0)
-        g.appendChild(el('rect',{x:bx, y:c.plotB-hC-hP, width:bw, height:hP,
-          fill:'rgba(201,146,10,0.22)', stroke:'#c9920a', 'stroke-width':'0.5'}));
-      // Divider line at call/put boundary
-      if (hC > 0 && hP > 0)
-        g.appendChild(el('line',{x1:bx, y1:c.plotB-hC, x2:bx+bw, y2:c.plotB-hC,
-          stroke:tc('rgba(255,255,255,0.6)','rgba(0,0,0,0.35)'), 'stroke-width':'0.75'}));
-    } else {
-      if (r.call>0) {
-        const h = r.call/maxVol*availH;
-        g.appendChild(el('rect',{x:cx-halfBar*2-0.5, y:c.plotB-h, width:halfBar*2, height:h,
-          fill:'rgba(26,58,107,0.18)', stroke:'#1a3a6b', 'stroke-width':'0.5'}));
-      }
-      if (r.put>0) {
-        const h = r.put/maxVol*availH;
-        g.appendChild(el('rect',{x:cx+0.5, y:c.plotB-h, width:halfBar*2, height:h,
-          fill:'rgba(201,146,10,0.16)', stroke:'#c9920a', 'stroke-width':'0.5'}));
+  if (showBars) {
+    for (const r of intVisible) {
+      const cx = c.toSvgX(r.strike);
+      if (barStackMode) {
+        const hC = (r.call||0) / maxVol * availH;
+        const hP = (r.put ||0) / maxVol * availH;
+        const bx = cx - halfBar;
+        const bw = halfBar * 2;
+        // Call segment (bottom)
+        if (hC > 0)
+          g.appendChild(el('rect',{x:bx, y:c.plotB-hC, width:bw, height:hC,
+            fill:'rgba(26,58,107,0.22)', stroke:'#1a3a6b', 'stroke-width':'0.5'}));
+        // Put segment (stacked on top of call)
+        if (hP > 0)
+          g.appendChild(el('rect',{x:bx, y:c.plotB-hC-hP, width:bw, height:hP,
+            fill:'rgba(201,146,10,0.22)', stroke:'#c9920a', 'stroke-width':'0.5'}));
+        // Divider line at call/put boundary
+        if (hC > 0 && hP > 0)
+          g.appendChild(el('line',{x1:bx, y1:c.plotB-hC, x2:bx+bw, y2:c.plotB-hC,
+            stroke:tc('rgba(255,255,255,0.6)','rgba(0,0,0,0.35)'), 'stroke-width':'0.75'}));
+      } else {
+        if (r.call>0) {
+          const h = r.call/maxVol*availH;
+          g.appendChild(el('rect',{x:cx-halfBar*2-0.5, y:c.plotB-h, width:halfBar*2, height:h,
+            fill:'rgba(26,58,107,0.18)', stroke:'#1a3a6b', 'stroke-width':'0.5'}));
+        }
+        if (r.put>0) {
+          const h = r.put/maxVol*availH;
+          g.appendChild(el('rect',{x:cx+0.5, y:c.plotB-h, width:halfBar*2, height:h,
+            fill:'rgba(201,146,10,0.16)', stroke:'#c9920a', 'stroke-width':'0.5'}));
+        }
       }
     }
   }
@@ -1218,8 +1221,11 @@ function drawBars(c, rows) {
       : Math.max(r.oicall||0, r.oiput||0);
     const hTotal = Math.max(intH, oiH) / maxVol * availH;
     if (hTotal <= 0) continue;
+    // In side-by-side mode the call bar sits at cx-halfBar*2 and the put bar
+    // sits at cx+0.5; the hit zone must span both so we widen it to cover
+    // from the left edge of the call bar to the right edge of the put bar.
     const hx = barStackMode ? cx-halfBar        : cx-halfBar*2-0.5;
-    const hw = barStackMode ? halfBar*2          : halfBar*4+1;
+    const hw = barStackMode ? halfBar*2          : halfBar*4+1.0;
     const hit = el('rect',{
       x:hx, y:c.plotB-hTotal, width:hw, height:hTotal,
       fill:'rgba(0,0,0,0.01)', stroke:'none', style:'cursor:crosshair',
@@ -1911,10 +1917,13 @@ function _render() {
   if (volZoneVisible) drawVolZone(c); else clearG('g-volzone');
   drawFutureLine(c);
   drawDotGrid(c,mean,sd);
-  drawBars(c, chartView !== 'oi'      ? (liveData ? liveData.rows : null) : null);
+  drawBars(c,
+    liveData ? liveData.rows : null,
+    chartView !== 'oi'   // showBars: hide intraday fills when OI-only view
+  );
   drawOIBars(c, chartView !== 'intraday' ? (oiData   ? oiData.rows   : null) : null);
-  // When a layer is hidden, clear its SVG group explicitly
-  if (chartView === 'oi')       { clearG('g-bars'); clearG('g-hitzones'); }
+  // When a layer is hidden, clear its SVG group explicitly — but NEVER clear
+  // g-hitzones because drawBars always rebuilds them for all views
   if (chartView === 'intraday') { clearG('g-oibars'); }
   drawVolCurve(c,liveData?liveData.rows:null);
   drawCurve(c,mean,sd);
