@@ -1354,6 +1354,16 @@ function drawArrow(c, rows) {
   lt.textContent='−'+fmt(halfLen); g.appendChild(lt);
   const rt=el('text',{x:rx+3,y:arrowY-2,'text-anchor':'start','font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('#a09080','#505050')});
   rt.textContent='+'+fmt(halfLen); g.appendChild(rt);
+  const title = el('text', {
+  x: mx,
+  y: arrowY - 5, // slightly above the arrow
+  'text-anchor': 'middle',
+  'font-size': '7',
+  'font-family': 'IBM Plex Mono, monospace',
+  fill: tc('#a09080', '#505050')
+});
+title.textContent = 'Expected Distances';
+g.appendChild(title);
 }
 
 /* ================================================================
