@@ -62,7 +62,6 @@
   background: var(--bg1);
   color: var(--fg0);
 }
-[data-theme="dark"] .sdg-label.z0 { color: #f0f0f0; }
 [data-theme="dark"] .x-tick.is-mean { color: #f0f0f0; }
 [data-theme="dark"] .x-tick.is-1sd  { color: #d0c8c0; }
 [data-theme="dark"] .x-tick.is-2sd  { color: #908880; }
@@ -77,12 +76,7 @@
 [data-theme="dark"] .stat-cell.oi-put  .stat-val  { color: #d4a830; }
 [data-theme="dark"] .stat-cell.int-call .stat-val { color: #4a7ac8; }
 [data-theme="dark"] .stat-cell.int-put  .stat-val { color: #d4a830; }
-[data-theme="dark"] .sdg-label.m3 { color: #505050; }
-[data-theme="dark"] .sdg-label.m2 { color: #707070; }
-[data-theme="dark"] .sdg-label.m1 { color: #a0a0a0; }
-[data-theme="dark"] .sdg-label.p1 { color: #a0a0a0; }
-[data-theme="dark"] .sdg-label.p2 { color: #707070; }
-[data-theme="dark"] .sdg-label.p3 { color: #505050; }
+
 [data-theme="dark"] .pulse { background: #48a868; }
 [data-theme="dark"] .sdg-dot { background: #48a868; }
 
@@ -400,34 +394,12 @@ input[type="range"] {
   flex-direction: row;
   align-items: stretch;
   gap: 0;
-  padding: 0 10px 0 8px;
+  padding: 0 10px;
   position: relative;
   min-height: 240px;
 }
 
-.sdg-labels {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  width: 28px;
-  flex-shrink: 0;
-}
 
-.sdg-label {
-  font-size: 9px;
-  font-family: var(--mono);
-  text-align: right;
-  padding-right: 6px;
-  line-height: 1;
-  transform: translateY(50%);
-}
-.sdg-label.m3 { color: var(--fg3); }
-.sdg-label.m2 { color: var(--fg2); }
-.sdg-label.m1 { color: var(--fg1); }
-.sdg-label.z0 { color: var(--fg0); font-weight: 600; }
-.sdg-label.p1 { color: var(--fg1); }
-.sdg-label.p2 { color: var(--fg2); }
-.sdg-label.p3 { color: var(--fg3); }
 
 .sdg-track {
   flex: 1;
@@ -826,16 +798,7 @@ footer {
       </div>
       <div class="sdg-body">
         <div class="sdg-track-wrap">
-          <!-- zone labels left -->
-          <div class="sdg-labels" id="sdg-labels">
-            <div class="sdg-label m3">💀</div>
-            <div class="sdg-label m2">🚀</div>
-            <div class="sdg-label m1">🤑</div>
-            <div class="sdg-label z0">🤷🏻‍♂️</div>
-            <div class="sdg-label p1">🤑</div>
-            <div class="sdg-label p2">🚀</div>
-            <div class="sdg-label p3">💀</div>
-          </div>
+
           <!-- the actual track with bands + arrow -->
           <div class="sdg-track" id="sdg-track">
             <!-- bands injected by JS -->
@@ -1799,24 +1762,24 @@ function initGaugeBands() {
   // Remove old bands (keep arrow-wrap)
   Array.from(track.querySelectorAll('.sdg-band')).forEach(b=>b.remove());
   const lightBands = [
-    { from: 3, to: 4,  bg: 'rgba(80,140,80,0.10)' },
-    { from: 2, to: 3,  bg: 'rgba(140,120,60,0.13)' },
-    { from: 1, to: 2,  bg: 'rgba(160,110,70,0.16)' },
-    { from: 0, to: 1,  bg: 'rgba(180,100,80,0.10)' },
-    { from:-1, to: 0,  bg: 'rgba(180,100,80,0.10)' },
-    { from:-2, to:-1,  bg: 'rgba(160,110,70,0.16)' },
-    { from:-3, to:-2,  bg: 'rgba(140,120,60,0.13)' },
-    { from:-4, to:-3,  bg: 'rgba(80,140,80,0.10)' },
+    { from: 3, to: 4,  bg: 'rgba(80,140,80,0.10)',  label: 'WTF',    labelColor: 'rgba(60,110,60,0.55)' },
+    { from: 2, to: 3,  bg: 'rgba(140,120,60,0.13)', label: 'ALL IN', labelColor: 'rgba(110,90,30,0.55)' },
+    { from: 1, to: 2,  bg: 'rgba(160,110,70,0.16)', label: 'YES',    labelColor: 'rgba(130,80,40,0.60)' },
+    { from: 0, to: 1,  bg: 'rgba(180,100,80,0.10)', label: 'NO',     labelColor: 'rgba(150,70,55,0.50)' },
+    { from:-1, to: 0,  bg: 'rgba(180,100,80,0.10)', label: 'NO',     labelColor: 'rgba(150,70,55,0.50)' },
+    { from:-2, to:-1,  bg: 'rgba(160,110,70,0.16)', label: 'YES',    labelColor: 'rgba(130,80,40,0.60)' },
+    { from:-3, to:-2,  bg: 'rgba(140,120,60,0.13)', label: 'ALL IN', labelColor: 'rgba(110,90,30,0.55)' },
+    { from:-4, to:-3,  bg: 'rgba(80,140,80,0.10)',  label: 'WTF',    labelColor: 'rgba(60,110,60,0.55)' },
   ];
   const darkBands = [
-    { from: 3, to: 4,  bg: 'rgba(40,120,60,0.20)' },
-    { from: 2, to: 3,  bg: 'rgba(40,120,60,0.20)' },
-    { from: 1, to: 2,  bg: 'rgba(140,80,30,0.28)' },
-    { from: 0, to: 1,  bg: 'rgba(160,60,40,0.18)' },
-    { from:-1, to: 0,  bg: 'rgba(160,60,40,0.18)' },
-    { from:-2, to:-1,  bg: 'rgba(140,80,30,0.28)' },
-    { from:-3, to:-2,  bg: 'rgba(120,120,30,0.22)' },
-    { from:-4, to:-3,  bg: 'rgba(40,120,60,0.20)' },
+    { from: 3, to: 4,  bg: 'rgba(40,120,60,0.20)',  label: 'WTF',    labelColor: 'rgba(80,200,100,0.50)' },
+    { from: 2, to: 3,  bg: 'rgba(40,120,60,0.20)',  label: 'ALL IN', labelColor: 'rgba(80,200,100,0.50)' },
+    { from: 1, to: 2,  bg: 'rgba(140,80,30,0.28)',  label: 'YES',    labelColor: 'rgba(220,140,70,0.55)' },
+    { from: 0, to: 1,  bg: 'rgba(160,60,40,0.18)',  label: 'NO',     labelColor: 'rgba(240,100,80,0.50)' },
+    { from:-1, to: 0,  bg: 'rgba(160,60,40,0.18)',  label: 'NO',     labelColor: 'rgba(240,100,80,0.50)' },
+    { from:-2, to:-1,  bg: 'rgba(140,80,30,0.28)',  label: 'YES',    labelColor: 'rgba(220,140,70,0.55)' },
+    { from:-3, to:-2,  bg: 'rgba(120,120,30,0.22)', label: 'ALL IN', labelColor: 'rgba(200,200,60,0.50)' },
+    { from:-4, to:-3,  bg: 'rgba(40,120,60,0.20)',  label: 'WTF',    labelColor: 'rgba(80,200,100,0.50)' },
   ];
   const bandDefs = isDark ? darkBands : lightBands;
   // sigma range rendered: -4 to +4 (clamped visually), total = 8 sigma units
@@ -1828,7 +1791,12 @@ function initGaugeBands() {
     div.className = 'sdg-band';
     div.dataset.from = b.from;
     div.dataset.to   = b.to;
-    div.style.cssText = `top:${topPct}%;height:${heightPct}%;background:${b.bg};transition:filter 0.3s,opacity 0.3s;`;
+    div.style.cssText = `top:${topPct}%;height:${heightPct}%;background:${b.bg};transition:filter 0.3s,opacity 0.3s;display:flex;align-items:center;justify-content:center;overflow:hidden;`;
+    const lbl = document.createElement('span');
+    lbl.className = 'sdg-band-lbl';
+    lbl.textContent = b.label;
+    lbl.style.cssText = `font-family:var(--mono);font-size:8px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:${b.labelColor};pointer-events:none;user-select:none;white-space:nowrap;`;
+    div.appendChild(lbl);
     // thin separator lines at exact sigma multiples
     if ([-3,-2,-1,0,1,2,3].includes(b.from)) {
       div.style.borderTop = `1px solid ${tc('rgba(26,20,14,0.08)','rgba(255,255,255,0.07)')}`;
@@ -1870,9 +1838,13 @@ function updateGauge() {
     if (isActive) {
       band.style.filter = 'brightness(0.72) saturate(3)';
       band.style.opacity = '1';
+      const lbl = band.querySelector('.sdg-band-lbl');
+      if (lbl) lbl.style.opacity = '1';
     } else {
       band.style.filter = '';
       band.style.opacity = '0.55';
+      const lbl = band.querySelector('.sdg-band-lbl');
+      if (lbl) lbl.style.opacity = '0.7';
     }
   });
 
