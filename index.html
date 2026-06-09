@@ -1726,24 +1726,24 @@ function initGaugeBands() {
   // Remove old bands (keep arrow-wrap)
   Array.from(track.querySelectorAll('.sdg-band')).forEach(b=>b.remove());
   const lightBands = [
-    { from: 3, to: 4,  bg: 'rgba(180,100,80,0.10)' },
-    { from: 2, to: 3,  bg: 'rgba(160,110,70,0.16)' },
-    { from: 1, to: 2,  bg: 'rgba(140,120,60,0.13)' },
-    { from: 0, to: 1,  bg: 'rgba(80,140,80,0.10)' },
-    { from:-1, to: 0,  bg: 'rgba(80,140,80,0.10)' },
-    { from:-2, to:-1,  bg: 'rgba(140,120,60,0.13)' },
-    { from:-3, to:-2,  bg: 'rgba(160,110,70,0.16)' },
-    { from:-4, to:-3,  bg: 'rgba(180,100,80,0.10)' },
+    { from: 3, to: 4,  bg: 'rgba(80,140,80,0.10)' },
+    { from: 2, to: 3,  bg: 'rgba(140,120,60,0.13)' },
+    { from: 1, to: 2,  bg: 'rgba(160,110,70,0.16)' },
+    { from: 0, to: 1,  bg: 'rgba(180,100,80,0.10)' },
+    { from:-1, to: 0,  bg: 'rgba(180,100,80,0.10)' },
+    { from:-2, to:-1,  bg: 'rgba(160,110,70,0.16)' },
+    { from:-3, to:-2,  bg: 'rgba(140,120,60,0.13)' },
+    { from:-4, to:-3,  bg: 'rgba(80,140,80,0.10)' },
   ];
   const darkBands = [
-    { from: 3, to: 4,  bg: 'rgba(160,60,40,0.18)' },
-    { from: 2, to: 3,  bg: 'rgba(140,80,30,0.28)' },
-    { from: 1, to: 2,  bg: 'rgba(120,120,30,0.22)' },
-    { from: 0, to: 1,  bg: 'rgba(40,120,60,0.20)' },
-    { from:-1, to: 0,  bg: 'rgba(40,120,60,0.20)' },
-    { from:-2, to:-1,  bg: 'rgba(120,120,30,0.22)' },
-    { from:-3, to:-2,  bg: 'rgba(140,80,30,0.28)' },
-    { from:-4, to:-3,  bg: 'rgba(160,60,40,0.18)' },
+    { from: 3, to: 4,  bg: 'rgba(40,120,60,0.20)' },
+    { from: 2, to: 3,  bg: 'rgba(40,120,60,0.20)' },
+    { from: 1, to: 2,  bg: 'rgba(140,80,30,0.28)' },
+    { from: 0, to: 1,  bg: 'rgba(160,60,40,0.18)' },
+    { from:-1, to: 0,  bg: 'rgba(160,60,40,0.18)' },
+    { from:-2, to:-1,  bg: 'rgba(140,80,30,0.28)' },
+    { from:-3, to:-2,  bg: 'rgba(120,120,30,0.22)' },
+    { from:-4, to:-3,  bg: 'rgba(40,120,60,0.20)' },
   ];
   const bandDefs = isDark ? darkBands : lightBands;
   // sigma range rendered: -4 to +4 (clamped visually), total = 8 sigma units
