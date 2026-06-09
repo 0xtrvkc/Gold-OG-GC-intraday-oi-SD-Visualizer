@@ -1340,7 +1340,7 @@ function drawArrow(c, rows) {
   if (!visible.length) return;
   const minVol = Math.min(...visible.map(r=>r.vol));
   const halfLen = (minVol/16)*state.mean;
-  const arrowY = c.plotB-10;
+  const arrowY = c.plotB-280;
   const mx=c.toSvgX(state.mean);
   const lx=c.toSvgX(Math.max(state.mean-halfLen,c.xMin));
   const rx=c.toSvgX(Math.min(state.mean+halfLen,c.xMax));
@@ -1383,7 +1383,7 @@ function drawMarkers(c, mean, sd) {
       if (dx<c.xMin||dx>c.xMax) continue;
       const sx=c.toSvgX(dx);
       g.appendChild(el('line',{x1:sx,y1:c.plotT,x2:sx,y2:c.plotB,stroke:col,'stroke-width':'0.75'}));
-      const t=el('text',{x:sx,y:c.plotT+12,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:col,'font-weight':'500'});
+      const t=el('text',{x:sx,y:c.plotT-2,'text-anchor':'middle','font-size':'8','font-family':'IBM Plex Mono,monospace',fill:col,'font-weight':'500'});
       t.textContent=(side>0?'+':'')+(side*zone.mult)+'σ'; g.appendChild(t);
     }
   }
