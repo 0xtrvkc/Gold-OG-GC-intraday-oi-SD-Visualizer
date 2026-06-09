@@ -1182,15 +1182,18 @@ function getBarScale(c) {
 function drawBars(c, rows) {
   const g  = clearG('g-bars');
   const gh = clearG('g-hitzones');
-  if (!rows||!rows.length) return;
-  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax);
-  if (!visible.length) return;
+
+  // Always build hit zones for every visible strike (intraday + OI)
   const oiVisible = oiData ? (oiData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+  const intVisible = rows ? rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
+
+  if (!intVisible.length && !oiVisible.length) return;
+
   const { maxVol, availH, halfBar } = getBarScale(c);
 
   // Build unified strike map for hit zones (intraday + OI)
   const strikeMap = new Map();
-  for (const r of visible)  strikeMap.set(r.strike, { ...r, oicall:0, oiput:0 });
+  for (const r of intVisible) strikeMap.set(r.strike, { ...r, oicall:0, oiput:0 });
   for (const r of oiVisible) {
     if (strikeMap.has(r.strike)) {
       const e = strikeMap.get(r.strike);
@@ -1201,7 +1204,7 @@ function drawBars(c, rows) {
   }
 
   // ── Intraday bars ──────────────────────────────────────────────
-  for (const r of visible) {
+  for (const r of intVisible) {
     const cx = c.toSvgX(r.strike);
     if (barStackMode) {
       const hC = (r.call||0) / maxVol * availH;
@@ -1237,9 +1240,13 @@ function drawBars(c, rows) {
   // ── Hit zones (cover full bar stack height) ────────────────────
   for (const [strike, r] of strikeMap) {
     const cx = c.toSvgX(strike);
-    const hTotal = barStackMode
-      ? ((r.call||0)+(r.put||0)) / maxVol * availH
-      : Math.max(r.call||0, r.put||0, r.oicall||0, r.oiput||0) / maxVol * availH;
+    const intH = barStackMode
+      ? (r.call||0)+(r.put||0)
+      : Math.max(r.call||0, r.put||0);
+    const oiH = barStackMode
+      ? (r.oicall||0)+(r.oiput||0)
+      : Math.max(r.oicall||0, r.oiput||0);
+    const hTotal = Math.max(intH, oiH) / maxVol * availH;
     if (hTotal <= 0) continue;
     const hx = barStackMode ? cx-halfBar        : cx-halfBar*2-0.5;
     const hw = barStackMode ? halfBar*2          : halfBar*4+1;
@@ -1264,6 +1271,7 @@ function drawBars(c, rows) {
 ================================================================ */
 function drawOIBars(c, rows) {
   const g = clearG('g-oibars');
+  g.setAttribute('pointer-events', 'none');
   if (!rows||!rows.length) return;
   const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax);
   if (!visible.length) return;
