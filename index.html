@@ -783,7 +783,8 @@ footer {
     <button class="btn-sm" onclick="adjustZoom(2)">+</button>
     <button class="btn-sm" onclick="adjustZoom(0.5)">−</button>
     <button class="btn-sm" onclick="resetZoom()" style="color:var(--fg3)">Reset</button>
-    <span class="zoom-level" id="zoom-label">2×</span>
+    <span class="zoom-level" id="zoom-label">fit</span>
+    <button id="btn-zoom-auto" class="toggle-btn active" onclick="setZoomAutoMode(!zoomAutoMode)" title="Auto-fit zoom to data on each refresh">⟳ Auto</button>
     <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
     <button id="btn-bar-stack" class="toggle-btn active" onclick="toggleBarStack()" style="margin-left:auto">▤ Stacked</button>
     <span style="display:inline-block;width:1px;height:14px;background:var(--line2);margin:0 4px;vertical-align:middle;"></span>
@@ -927,7 +928,8 @@ const OI_URL   = 'https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIDa
 /* ================================================================
   STATE
 ================================================================ */
-let state = { mean: 4500, sd: 0, zoom: 2.0, panOffset: 0 };
+let state = { mean: 4500, sd: 0, zoom: 1.0, panOffset: 0 };
+let zoomAutoMode = true; // true = auto-fit on every refresh; false = manual
 let volZoneVisible = false;
 let barStackMode   = true;   // true = stacked, false = side-by-side
 let chartView      = 'both'; // 'both' | 'intraday' | 'oi'
@@ -1518,18 +1520,65 @@ document.getElementById('g-hitzones').addEventListener('mouseleave',()=>{ tip.st
   ZOOM + PAN
 ================================================================ */
 const MIN_ZOOM=0.25, MAX_ZOOM=16;
+
+/* ================================================================
+  FIT ZOOM — auto-fit zoom so the farthest left/right bar strikes
+  are just inside the chart edges (with a small margin).
+  Uses whichever dataset (intraday or OI) has the widest span.
+================================================================ */
+function fitZoomToData() {
+  const mean = state.mean;
+  if (!mean || mean <= 0) return;
+
+  const strikes = [];
+  if (liveData && liveData.rows) liveData.rows.forEach(r => strikes.push(r.strike));
+  if (oiData   && oiData.rows)   oiData.rows.forEach(r => strikes.push(r.strike));
+  if (!strikes.length) return;
+
+  const minStrike = Math.min(...strikes);
+  const maxStrike = Math.max(...strikes);
+  const leftDist  = Math.abs(mean - minStrike);
+  const rightDist = Math.abs(maxStrike - mean);
+  const halfRange = Math.max(leftDist, rightDist) * 1.08; // 8% margin
+
+  if (halfRange <= 0) return;
+
+  const targetZoom = CFG.X_HALF / halfRange;
+  state.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, targetZoom));
+  state.panOffset = 0;
+  const lbl = state.zoom >= 1
+    ? Math.round(state.zoom) + '×'
+    : '1/' + Math.round(1 / state.zoom) + '×';
+  document.getElementById('zoom-label').textContent = lbl;
+}
+
+function setZoomAutoMode(on) {
+  zoomAutoMode = on;
+  const btn = document.getElementById('btn-zoom-auto');
+  if (on) {
+    btn.textContent = '⟳ Auto';
+    btn.classList.add('active');
+    fitZoomToData();
+    render();
+  } else {
+    btn.textContent = '✎ Manual';
+    btn.classList.remove('active');
+  }
+}
+
 function adjustZoom(factor) {
+  // Any manual zoom action switches to manual mode
+  if (zoomAutoMode) setZoomAutoMode(false);
   state.zoom=Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,state.zoom*factor));
   document.getElementById('zoom-label').textContent=state.zoom>=1?Math.round(state.zoom)+'×':'1/'+Math.round(1/state.zoom)+'×';
   render();
 }
 function resetZoom() {
-  state.zoom=2.0; state.panOffset=0;
-  document.getElementById('zoom-label').textContent='2×';
-  render();
+  setZoomAutoMode(true);
 }
 document.getElementById('chart').addEventListener('wheel',e=>{
   e.preventDefault();
+  if (zoomAutoMode) setZoomAutoMode(false);
   const rect=e.currentTarget.getBoundingClientRect();
   const frac=(e.clientX-rect.left)/rect.width;
   const c=makeCoords(state.mean,state.sd>0?state.sd:50);
@@ -1965,6 +2014,11 @@ async function fetchData() {
     }
     render();
     updateGauge();
+    // Auto-fit zoom on every refresh when auto mode is active
+    if (zoomAutoMode) {
+      fitZoomToData();
+      render();
+    }
   } catch(e) {
     err.style.display='block';
     err.textContent='⚠ Error fetching data: '+e.message;
