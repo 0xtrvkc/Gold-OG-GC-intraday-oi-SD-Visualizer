@@ -2538,13 +2538,47 @@ async function fetchMacro() {
       return;
     }
 
+    // Convert US Pacific time string (e.g. "5:30am") → Bangkok time (UTC+7).
+    // PDT (Mar–Nov) = UTC-7  →  BKK offset = +14 h
+    // PST (Nov–Mar) = UTC-8  →  BKK offset = +15 h
+    function etToBkk(timeStr) {
+      if (!timeStr) return '—';
+      const m = timeStr.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
+      if (!m) return timeStr;
+      let h = parseInt(m[1], 10);
+      const min = parseInt(m[2], 10);
+      const ampm = m[3].toLowerCase();
+      if (ampm === 'pm' && h !== 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+
+      // Detect DST: 2nd Sunday of March → 1st Sunday of November (US rule)
+      const now = new Date();
+      const yr  = now.getUTCFullYear();
+      function nthSunday(month, n) {
+        const d = new Date(Date.UTC(yr, month, 1));
+        d.setUTCDate(1 + ((7 - d.getUTCDay()) % 7) + (n - 1) * 7);
+        return d;
+      }
+      const isDST = now >= nthSunday(2, 2) && now < nthSunday(10, 1);
+      const ptOffsetH = isDST ? 7 : 8;   // PDT=UTC-7, PST=UTC-8
+
+      // Pacific → UTC → BKK (UTC+7)
+      const totalMin = h * 60 + min + ptOffsetH * 60 + 7 * 60;
+      const bkkH = Math.floor(totalMin / 60) % 24;
+      const bkkM = totalMin % 60;
+      const suffix = bkkH >= 12 ? 'pm' : 'am';
+      const h12 = bkkH % 12 || 12;
+      return `${h12}:${String(bkkM).padStart(2,'0')}${suffix}`;
+    }
+
     const rows = data.events.map(ev => {
       const impact = (ev.impact || '').toUpperCase();
       const impactLabel = impact === 'HIGH' ? 'HIGH' : impact === 'MEDIUM' ? 'MED' : impact || '—';
+      const bkkTime = etToBkk(ev.time);
       return `<div class="macro-event-row">` +
         `<span class="macro-impact ${impact}">${impactLabel}</span>` +
-        `<span class="macro-time">${ev.time || '—'}</span>` +
-        `<span class="macro-currency">${ev.currency || ''}</span>` +
+        `<span class="macro-time" title="ET: ${ev.time || '—'}">${bkkTime} <span style="font-size:9px;color:var(--fg3);letter-spacing:0">BKK</span></span>` +
+        `<span class="macro-currency">&nbsp;${ev.currency || ''}&nbsp;</span>` +
         `<span class="macro-event-name">${ev.event || '—'}</span>` +
         `</div>`;
     }).join('');
