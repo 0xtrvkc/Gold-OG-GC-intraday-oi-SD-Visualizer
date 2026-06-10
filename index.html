@@ -667,6 +667,144 @@ footer {
   padding-top: 12px;
   letter-spacing: 0.04em;
 }
+
+/* ── MACRO NEWS BOX ── */
+.macro-box {
+  border: 1px solid var(--line2);
+  background: var(--bg1);
+  border-radius: 2px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.macro-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 7px;
+  border-bottom: 1px solid var(--line);
+  gap: 10px;
+}
+
+.macro-title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.macro-label {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+
+.macro-skip-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  line-height: 1.4;
+}
+.macro-skip-badge.danger {
+  color: var(--danger);
+  background: rgba(180,51,51,0.08);
+}
+[data-theme="dark"] .macro-skip-badge.danger {
+  background: rgba(224,85,85,0.10);
+}
+.macro-skip-badge.ok {
+  color: #2a8a4a;
+  background: rgba(42,138,74,0.08);
+}
+[data-theme="dark"] .macro-skip-badge.ok {
+  color: #48a868;
+  background: rgba(72,168,104,0.10);
+}
+
+.macro-meta {
+  font-size: 10px;
+  color: var(--fg3);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.macro-summary {
+  font-size: 10px;
+  color: var(--fg2);
+  letter-spacing: 0.03em;
+  font-style: italic;
+}
+
+.macro-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.macro-event-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 7px 14px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  flex: 1;
+  min-width: 220px;
+  box-sizing: border-box;
+}
+/* JS sets data-last-row on last-row items to remove bottom border */
+.macro-event-row[data-last-row] {
+  border-bottom: none;
+}
+
+.macro-impact {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  width: 34px;
+  flex-shrink: 0;
+}
+.macro-impact.HIGH   { color: var(--danger); }
+.macro-impact.MEDIUM { color: var(--oi-put); }
+.macro-impact.LOW    { color: var(--fg3); }
+
+.macro-time {
+  font-size: 10px;
+  color: var(--fg2);
+  letter-spacing: 0.03em;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.macro-currency {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--oi-call);
+  letter-spacing: 0.06em;
+  min-width: 30px;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .macro-currency { color: #4a7ac8; }
+
+.macro-event-name {
+  font-size: 10px;
+  color: var(--fg1);
+  letter-spacing: 0.02em;
+  flex: 1;
+}
+
+.macro-empty {
+  padding: 10px 14px;
+  font-size: 10px;
+  color: var(--fg3);
+  letter-spacing: 0.04em;
+}
 </style>
 </head>
 <body>
@@ -862,6 +1000,20 @@ footer {
     <div class="legend-item">
       <div class="legend-line" style="background:#9a9080;"></div>
       <div><span class="legend-name" style="color:#9a9080">Vol Settle</span><span class="legend-desc">Implied volatility curve</span></div>
+    </div>
+  </div>
+
+  <!-- MACRO NEWS BOX -->
+  <div class="macro-box" id="macro-box">
+    <div class="macro-header">
+      <div class="macro-title-row">
+        <span class="macro-label">Macro Events</span>
+        <span class="macro-skip-badge" id="macro-skip-badge">—</span>
+      </div>
+      <span class="macro-meta" id="macro-meta">—</span>
+    </div>
+    <div id="macro-events-body">
+      <div class="macro-empty">Loading macro events…</div>
     </div>
   </div>
 
@@ -2121,6 +2273,7 @@ document.getElementById('inp-vol-val').addEventListener('input',function(){
 document.getElementById('btn-refresh').addEventListener('click',()=>{
   fetchGoldPrice();
   fetchData();
+  fetchMacro();
   resetCountdown(parseInt(document.getElementById('sel-interval').value)/1000);
 });
 function resetMean() {
@@ -2155,7 +2308,7 @@ function resetCountdown(sec) {
 function scheduleRefresh() {
   clearInterval(refreshTimer);
   const ms=parseInt(document.getElementById('sel-interval').value);
-  refreshTimer=setInterval(()=>{ fetchGoldPrice(); fetchData(); resetCountdown(ms/1000); },ms);
+  refreshTimer=setInterval(()=>{ fetchGoldPrice(); fetchData(); fetchMacro(); resetCountdown(ms/1000); },ms);
   resetCountdown(ms/1000);
 }
 document.getElementById('sel-interval').addEventListener('change',()=>{ scheduleRefresh(); });
@@ -2353,11 +2506,101 @@ async function fetchGoldPrice() {
 }
 
 /* ================================================================
+  MACRO NEWS FETCH
+================================================================ */
+const MACRO_URL = 'https://raw.githubusercontent.com/0xtrvkc/BTC-Daily-Short-Call-Premium-Income-Checklist/main/data/macro.json';
+
+async function fetchMacro() {
+  try {
+    // raw.githubusercontent.com doesn't support query strings — fetch plain URL
+    const res = await fetchWithTimeout(MACRO_URL, 8000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    const badge = document.getElementById('macro-skip-badge');
+    const meta  = document.getElementById('macro-meta');
+    const body  = document.getElementById('macro-events-body');
+
+    // Badge: skip=true → events present, trade with caution; skip=false → clear
+    const skip = data.skip === true;
+    badge.textContent = skip ? '⚠ Caution' : '✓ Clear';
+    badge.className   = 'macro-skip-badge ' + (skip ? 'danger' : 'ok');
+
+    // Meta: date · N events
+    const dateStr = data.date || '';
+    const count   = data.event_count != null ? data.event_count
+                    : (data.events ? data.events.length : 0);
+    meta.textContent = dateStr + (count ? '  ·  ' + count + ' event' + (count !== 1 ? 's' : '') : '');
+
+    // Events list
+    if (!data.events || data.events.length === 0) {
+      body.innerHTML = '<div class="macro-empty">No high-impact events today — trade freely.</div>';
+      return;
+    }
+
+    const rows = data.events.map(ev => {
+      const impact = (ev.impact || '').toUpperCase();
+      const impactLabel = impact === 'HIGH' ? 'HIGH' : impact === 'MEDIUM' ? 'MED' : impact || '—';
+      return `<div class="macro-event-row">` +
+        `<span class="macro-impact ${impact}">${impactLabel}</span>` +
+        `<span class="macro-time">${ev.time || '—'}</span>` +
+        `<span class="macro-currency">${ev.currency || ''}</span>` +
+        `<span class="macro-event-name">${ev.event || '—'}</span>` +
+        `</div>`;
+    }).join('');
+
+    body.innerHTML = `<div class="macro-events" id="macro-events-grid">${rows}</div>`;
+
+    // Mark last-row items so CSS can remove their bottom border
+    // Use ResizeObserver to re-evaluate whenever layout changes
+    function markLastRow() {
+      const grid = document.getElementById('macro-events-grid');
+      if (!grid) return;
+      const items = Array.from(grid.querySelectorAll('.macro-event-row'));
+      items.forEach(el => el.removeAttribute('data-last-row'));
+      if (!items.length) return;
+      // find the bottom offset of the last item
+      const lastBottom = items[items.length - 1].getBoundingClientRect().bottom;
+      items.forEach(el => {
+        if (Math.abs(el.getBoundingClientRect().bottom - lastBottom) < 2)
+          el.setAttribute('data-last-row', '');
+      });
+    }
+    // Run once after paint, then watch for layout shifts
+    requestAnimationFrame(() => {
+      markLastRow();
+      if (window._macroRO) window._macroRO.disconnect();
+      window._macroRO = new ResizeObserver(markLastRow);
+      const grid = document.getElementById('macro-events-grid');
+      if (grid) window._macroRO.observe(grid);
+    });
+
+    // Caution summary bar — reword raw JSON text to match app semantics
+    if (data.summary) {
+      const cleaned = data.summary
+        .replace(/SKIP TRADE/gi, 'trade with caution')
+        .replace(/skip trade/gi, 'trade with caution');
+      const sumEl = document.createElement('div');
+      sumEl.className = 'macro-summary';
+      sumEl.style.cssText = 'padding:6px 14px 8px;border-top:1px solid var(--line);';
+      sumEl.textContent = '⚠ ' + cleaned;
+      body.appendChild(sumEl);
+    }
+
+  } catch(e) {
+    const body = document.getElementById('macro-events-body');
+    if (body) body.innerHTML =
+      '<div class="macro-empty" style="color:var(--danger)">⚠ Failed to load macro events: ' + e.message + '</div>';
+  }
+}
+
+/* ================================================================
   BOOT
 ================================================================ */
 initGaugeBands();
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
+fetchMacro();
 scheduleRefresh();
 render();
 </script>
