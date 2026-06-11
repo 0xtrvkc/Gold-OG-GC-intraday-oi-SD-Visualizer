@@ -892,7 +892,8 @@ footer {
     <div class="stat-cell oi-call"> <div class="stat-lbl">OI Calls</div><div class="stat-val" id="val-oi-calls">—</div></div>
     <div class="stat-cell int-put"> <div class="stat-lbl">Intraday Puts</div><div class="stat-val" id="val-puts">—</div></div>
     <div class="stat-cell oi-put">  <div class="stat-lbl">OI Puts</div><div class="stat-val" id="val-oi-puts">—</div></div>
-    <div class="stat-cell">         <div class="stat-lbl">IV</div><div class="stat-val" id="val-vol">—</div></div>
+    <div class="stat-cell">         <div class="stat-lbl">Recent IV</div><div class="stat-val" id="val-vol">—</div></div>
+    <div class="stat-cell">         <div class="stat-lbl">1DTE IV</div><div class="stat-val" id="val-oi-iv-open">—</div></div>
     <div class="stat-cell">         <div class="stat-lbl">Fut Δ</div><div class="stat-val" id="val-futchg">—</div></div>
   </div>
 
@@ -1466,14 +1467,27 @@ function drawVolCurve(c, rows) {
 
 /* ================================================================
   DRAW ARROW
+  Half-length is based on the locked OI min-IV from first fetch of
+  the day (oiIvOpen), so the arrow stays stable across refreshes.
+  Falls back to the current OI min-IV if no locked value yet.
 ================================================================ */
 function drawArrow(c, rows) {
   const g = clearG('g-arrow');
-  if (!rows||!rows.length) return;
-  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0);
-  if (!visible.length) return;
-  const minVol = Math.min(...visible.map(r=>r.vol));
-  const halfLen = (minVol/16)*state.mean;
+
+  // Determine the IV to use: prefer locked OI open-IV, else current OI min-IV
+  let ivForArrow = oiIvOpen;
+  if (!ivForArrow) {
+    // Fallback: compute from oiData rows if available, else liveData rows
+    const srcRows = (oiData && oiData.rows && oiData.rows.length) ? oiData.rows : rows;
+    if (!srcRows || !srcRows.length) return;
+    const visible = srcRows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0);
+    if (!visible.length) return;
+    ivForArrow = Math.min(...visible.map(r=>r.vol));
+  }
+
+  if (!ivForArrow || ivForArrow <= 0) return;
+
+  const halfLen = (ivForArrow / 16) * state.mean;
   const arrowY = c.plotB-280;
   const mx=c.toSvgX(state.mean);
   const lx=c.toSvgX(Math.max(state.mean-halfLen,c.xMin));
@@ -1490,14 +1504,16 @@ function drawArrow(c, rows) {
   rt.textContent='+'+fmt(halfLen); g.appendChild(rt);
   const title = el('text', {
   x: mx,
-  y: arrowY - 5, // slightly above the arrow
+  y: arrowY - 5,
   'text-anchor': 'middle',
   'font-size': '7',
   'font-family': 'IBM Plex Mono, monospace',
   fill: tc('#a09080', '#505050')
 });
-title.textContent = 'Expected Distances';
-g.appendChild(title);
+  title.textContent = oiIvOpen
+    ? 'Expected Distances (OI IV open ' + (oiIvOpen * 100).toFixed(2) + '%)'
+    : 'Expected Distances';
+  g.appendChild(title);
 }
 
 /* ================================================================
@@ -2115,6 +2131,17 @@ async function fetchData() {
       const oit=await r2.text();
       oiData=parseIntraday(oit);
       oiUpdatedAt = new Date();
+
+      // Lock OI min-IV for the day on the very first successful OI fetch
+      if (oiIvOpen === null && oiData.rows && oiData.rows.length) {
+        const oiVolRows = oiData.rows.filter(r => r.vol != null && r.vol > 0);
+        if (oiVolRows.length) {
+          const minIv = Math.min(...oiVolRows.map(r => r.vol));
+          oiIvOpen = minIv;
+          saveOiIvOpen(minIv);
+          document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
+        }
+      }
     }
 
     const fmtTime = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
@@ -2343,7 +2370,31 @@ function tc(light, dark) { return isDark ? dark : light; }
 ================================================================ */
 let goldPriceFetched = false;
 
-const GOLD_CACHE_KEY = 'gcf_gold_cache_v1';
+const GOLD_CACHE_KEY    = 'gcf_gold_cache_v1';
+const OI_IV_OPEN_KEY    = 'gcf_oi_iv_open_v1';
+
+// In-memory: the locked OI min-IV for today (set on first OI fetch of the day)
+let oiIvOpen = null;  // decimal form e.g. 0.123
+
+function loadOiIvOpen() {
+  try {
+    const raw = localStorage.getItem(OI_IV_OPEN_KEY);
+    if (!raw) return;
+    const { date, minIv } = JSON.parse(raw);
+    const today = new Date().toISOString().slice(0, 10);
+    if (date === today && minIv > 0) {
+      oiIvOpen = minIv;
+      document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
+    }
+  } catch(e) {}
+}
+
+function saveOiIvOpen(minIv) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem(OI_IV_OPEN_KEY, JSON.stringify({ date: today, minIv }));
+  } catch(e) {}
+}
 
 // Two Yahoo hosts (query1 often blocked while query2 works, or vice-versa)
 const YF_HOSTS = [
@@ -2632,6 +2683,7 @@ async function fetchMacro() {
   BOOT
 ================================================================ */
 initGaugeBands();
+loadOiIvOpen();     // restore today's locked OI IV open from localStorage
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
