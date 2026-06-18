@@ -1289,7 +1289,12 @@ function drawVolZone(c) {
 function getBarScale(c) {
   const intRows = liveData ? (liveData.rows||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
   const oiRows  = oiData   ? (oiData.rows  ||[]).filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax) : [];
-  const all = [...intRows, ...oiRows];
+  // Only include rows from datasets that are currently visible
+  const visibleRows = [
+    ...(chartView !== 'oi'       ? intRows : []),
+    ...(chartView !== 'intraday' ? oiRows  : []),
+  ];
+  const all = visibleRows.length ? visibleRows : [...intRows, ...oiRows];
   if (!all.length) return { maxVol:1, availH:(c.plotB-c.plotT)*0.85, halfBar:4 };
   const maxVol = barStackMode
     ? Math.max(...all.map(r=>(r.call||0)+(r.put||0)), 1)
