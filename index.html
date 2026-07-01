@@ -1047,7 +1047,7 @@ svg.hist-svg {
 
     <div class="input-group">
       <span style="font-size:10px;font-family:var(--mono);color:var(--fg2);letter-spacing:0.04em;">&nbsp;</span>
-      <div class="input-label">Expacted distances</div>
+      <div class="input-label">G-Arrow IV (%)</div>
       <div class="input-sub" id="garrow-formula-lbl">OI IV open ÷ 16 × Mean</div>
       <input type="number" id="inp-garrow-iv" value="" placeholder="auto" step="0.01" min="0" data-auto="1">
       <button id="btn-garrow-reset" class="btn-reset" onclick="resetGArrowIv()" style="display:none">↺ reset</button>
@@ -2837,7 +2837,17 @@ function dayWindow() {
 function histLayout(vMin, vMax) {
   const pL = HCFG.PAD_L, pR = HCFG.W - HCFG.PAD_R;
   const pT = HCFG.PAD_T, pB = HCFG.H - HCFG.PAD_B;
-  if (vMax - vMin < 1e-9) { vMax = vMin + 1; }
+
+  // When series is flat (or nearly flat), enforce a minimum visible range
+  // of ±10% of the value's magnitude so the line sits in the middle of the
+  // chart with readable scale rather than collapsing to a 1-pixel sliver.
+  const mid  = (vMin + vMax) / 2;
+  const minRange = Math.max(Math.abs(mid) * 0.10, 1);  // 10% of value, floor at 1
+  if (vMax - vMin < minRange) {
+    vMin = mid - minRange / 2;
+    vMax = mid + minRange / 2;
+  }
+
   const padV = (vMax - vMin) * 0.08;
   const yLo = vMin - padV, yHi = vMax + padV;
   const { tStart, tEnd } = dayWindow();
@@ -2852,10 +2862,33 @@ function histLayout(vMin, vMax) {
 // Draws a faint horizontal gridline set (25/50/75%) — same convention as drawGrid()
 function drawHistGrid(gridGroupId, L) {
   const g = clearG(gridGroupId);
+
+  // Baseline
   g.appendChild(el('line',{x1:L.pL,y1:L.pB,x2:L.pR,y2:L.pB,stroke:tc('#c8bfb0','#2a2a2a'),'stroke-width':'1'}));
-  for (const f of [0.25,0.5,0.75]) {
-    const sy = M.scale(f,0,1,L.pB,L.pT);
-    g.appendChild(el('line',{x1:L.pL,y1:sy,x2:L.pR,y2:sy,stroke:tc('#d8d0c4','#1c1c1c'),'stroke-width':'0.5','stroke-dasharray':'2,4'}));
+
+  // Horizontal gridlines + Y-axis labels at 25/50/75% of the value range
+  const labelColor = tc('#9a9080','#5a5a5a');
+  for (const f of [0.25, 0.5, 0.75]) {
+    const val = L.yLo + (L.yHi - L.yLo) * f;
+    const sy  = L.toY(val);
+
+    g.appendChild(el('line',{x1:L.pL,y1:sy,x2:L.pR,y2:sy,
+      stroke:tc('#d8d0c4','#1c1c1c'),'stroke-width':'0.5','stroke-dasharray':'2,4'}));
+
+    // Format: integers for large values (OI counts), 2dp for small (vol%)
+    const label = Math.abs(val) >= 100
+      ? Math.round(val).toLocaleString()
+      : val.toFixed(2);
+
+    const txt = el('text', {
+      x: L.pL - 3, y: sy + 3.5,
+      'text-anchor': 'end',
+      fill: labelColor,
+      'font-size': '8',
+      'font-family': 'IBM Plex Mono, monospace',
+    });
+    txt.textContent = label;
+    g.appendChild(txt);
   }
 }
 
@@ -3321,10 +3354,9 @@ async function fetchMacro() {
       return;
     }
 
-    // Convert Eastern time string (e.g. "8:00am") → Bangkok time (UTC+7).
-    // Source data ("ET", per the tooltip below) is fixed Eastern Standard
-    // Time (UTC-5) — the feed does not shift for US daylight saving.
-    // EST (UTC-5) → BKK (UTC+7) is a flat +12 h, every day of the year.
+    // Convert US Pacific time string (e.g. "5:30am") → Bangkok time (UTC+7).
+    // PDT (Mar–Nov) = UTC-7  →  BKK offset = +14 h
+    // PST (Nov–Mar) = UTC-8  →  BKK offset = +15 h
     function etToBkk(timeStr) {
       if (!timeStr) return '—';
       const m = timeStr.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
@@ -3335,9 +3367,20 @@ async function fetchMacro() {
       if (ampm === 'pm' && h !== 12) h += 12;
       if (ampm === 'am' && h === 12) h = 0;
 
-      // ET (fixed EST, UTC-5) → BKK (UTC+7): +12 h
-      const totalMin = (h * 60 + min + 12 * 60) % (24 * 60);
-      const bkkH = Math.floor(totalMin / 60);
+      // Detect DST: 2nd Sunday of March → 1st Sunday of November (US rule)
+      const now = new Date();
+      const yr  = now.getUTCFullYear();
+      function nthSunday(month, n) {
+        const d = new Date(Date.UTC(yr, month, 1));
+        d.setUTCDate(1 + ((7 - d.getUTCDay()) % 7) + (n - 1) * 7);
+        return d;
+      }
+      const isDST = now >= nthSunday(2, 2) && now < nthSunday(10, 1);
+      const ptOffsetH = isDST ? 7 : 8;   // PDT=UTC-7, PST=UTC-8
+
+      // Pacific → UTC → BKK (UTC+7)
+      const totalMin = h * 60 + min + ptOffsetH * 60 + 7 * 60;
+      const bkkH = Math.floor(totalMin / 60) % 24;
       const bkkM = totalMin % 60;
       const suffix = bkkH >= 12 ? 'pm' : 'am';
       const h12 = bkkH % 12 || 12;
