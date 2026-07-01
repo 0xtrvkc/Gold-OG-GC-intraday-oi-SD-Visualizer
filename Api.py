@@ -192,6 +192,22 @@ if __name__ == "__main__":
     print(f"  DB:   {DB_PATH}")
     print(f"  HTML: {HTML_FILE}")
     print(f"  http://localhost:{PORT}")
+
+    # Ensure fetched_at index exists — keeps day queries fast even at 10yr+ scale.
+    # CREATE INDEX IF NOT EXISTS is a no-op if the index already exists.
+    if Path(DB_PATH).exists():
+        try:
+            _conn = sqlite3.connect(DB_PATH)
+            _conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_intraday_fetched_at "
+                "ON intraday (fetched_at)"
+            )
+            _conn.commit()
+            _conn.close()
+            print(f"  index: idx_intraday_fetched_at OK")
+        except Exception as e:
+            print(f"  index: could not create ({e})")
+
     print()
 
     server = HTTPServer(("127.0.0.1", PORT), Handler)
