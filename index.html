@@ -2963,9 +2963,26 @@ function renderPcHistChart() {
     oiCall:    { idxs: [], vals: [], color: tc('#1a3a6b','#4a7ac8'), label: 'OI Calls',        dashed: true  },
     oiPut:     { idxs: [], vals: [], color: tc('#c9920a','#d4a830'), label: 'OI Puts',         dashed: true  },
   };
+  // Forward-fill OI values across ticks where the database hasn't refreshed
+  // open interest yet. OI updates far less often than intraday volume (it's
+  // pulled from a slower-moving database snapshot), so most raw points have
+  // oiCall/oiPut === null. Without filling, the OI lines only show a handful
+  // of scattered dots instead of a continuous history — carry the last known
+  // OI value forward so the line spans the full session.
+  let lastOiCall = null, lastOiPut = null;
+  const oiFilled = gcfHistory.map(p => {
+    if (p.oiCall != null) lastOiCall = p.oiCall;
+    if (p.oiPut  != null) lastOiPut  = p.oiPut;
+    return {
+      oiCall: p.oiCall != null ? p.oiCall : lastOiCall,
+      oiPut:  p.oiPut  != null ? p.oiPut  : lastOiPut,
+    };
+  });
+
   gcfHistory.forEach((p,i) => {
     for (const k of Object.keys(series)) {
-      if (p[k] != null) { series[k].idxs.push(i); series[k].vals.push(p[k]); }
+      const v = (k === 'oiCall' || k === 'oiPut') ? oiFilled[i][k] : p[k];
+      if (v != null) { series[k].idxs.push(i); series[k].vals.push(v); }
     }
   });
 
