@@ -1943,13 +1943,17 @@ function updateStats(mean,sd) {
       chgEl.style.color = '';
     }
   }
-  // OI totals — sum call and put volumes from oiData rows
-  if (oiData && oiData.rows && oiData.rows.length) {
+  // OI totals — use the actual header totals reported by OIData.txt (same
+  // convention as Intraday Calls/Puts, which read liveData.callTotal/putTotal
+  // directly rather than summing the per-strike rows). Summing the rows can
+  // under/over-count vs. the file's own reported total when the strike table
+  // doesn't cover the full chain, so we read the meta line instead.
+  if (oiData) {
     const fmt3 = v => v >= 1000000 ? (v/1000000).toFixed(2)+'M' : v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toLocaleString();
-    const totalOiCalls = oiData.rows.reduce((s,r) => s + (r.call||0), 0);
-    const totalOiPuts  = oiData.rows.reduce((s,r) => s + (r.put ||0), 0);
-    document.getElementById('val-oi-calls').textContent = fmt3(totalOiCalls);
-    document.getElementById('val-oi-puts').textContent  = fmt3(totalOiPuts);
+    const totalOiCalls = parseFloat(String(oiData.callTotal).replace(/,/g,''));
+    const totalOiPuts  = parseFloat(String(oiData.putTotal).replace(/,/g,''));
+    document.getElementById('val-oi-calls').textContent = !isNaN(totalOiCalls) ? fmt3(totalOiCalls) : '—';
+    document.getElementById('val-oi-puts').textContent  = !isNaN(totalOiPuts)  ? fmt3(totalOiPuts)  : '—';
   }
 }
 
