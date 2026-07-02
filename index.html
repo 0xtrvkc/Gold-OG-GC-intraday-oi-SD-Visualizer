@@ -2699,6 +2699,13 @@ let goldPriceFetched = false;
 const GOLD_CACHE_KEY    = 'gcf_gold_cache_v1';
 const OI_IV_OPEN_KEY    = 'gcf_oi_iv_open_v1';
 
+// Repo/path for OIData.txt — used to look up the actual first commit of the
+// day via the GitHub API, so "first OI fetch of the day" is derived from
+// git history (same answer on every browser) rather than from whichever
+// moment a given browser happened to first load the page.
+const OI_REPO      = 'pageth/Vol2VolData';
+const OI_FILE_PATH = 'OIData.txt';
+
 // In-memory: the locked OI min-IV for today (set on first OI fetch of the day)
 let oiIvOpen = null;  // decimal form e.g. 0.123
 
@@ -2721,6 +2728,98 @@ function saveOiIvOpen(minIv) {
     const today = new Date().toISOString().slice(0, 10);
     localStorage.setItem(OI_IV_OPEN_KEY, JSON.stringify({ date: today, minIv }));
   } catch(e) {}
+}
+
+// The data source's collector runs on UTC+7 (confirmed: a commit timestamped
+// 2026-07-01T17:43:23Z carries the message "Data Sync: 7/2/2026, 12:43:10 AM"
+// — i.e. its own "today" already rolled over 7 hours before UTC midnight).
+// Using UTC midnight as the day boundary excluded that commit entirely, so
+// we compute the boundary in the source's timezone instead.
+const OI_SOURCE_UTC_OFFSET_HOURS = 7;
+function utcPlus7DayStartIso() {
+  const now = new Date();
+  const shiftedMs = now.getTime() + OI_SOURCE_UTC_OFFSET_HOURS * 3600 * 1000;
+  const shifted = new Date(shiftedMs); // UTC getters on this now read as UTC+7 wall-clock
+  const y = shifted.getUTCFullYear(), m = shifted.getUTCMonth(), d = shifted.getUTCDate();
+  const localMidnightAsUtcMs = Date.UTC(y, m, d, 0, 0, 0);
+  const trueUtcMs = localMidnightAsUtcMs - OI_SOURCE_UTC_OFFSET_HOURS * 3600 * 1000;
+  return new Date(trueUtcMs).toISOString();
+}
+
+// Look up the earliest commit today that touched OIData.txt, fetch that
+// exact historical snapshot, and compute the min-IV from it. This is what
+// "first OI fetch of the day" should really mean — the file's true first
+// state of the day, not whichever moment a given browser first loaded.
+//
+// IMPORTANT: the commits API returns newest-first, capped at 100 per page.
+// If the file is committed more than 100x/day, the true earliest commit
+// falls off page 1 — so we must paginate until we hit a short/empty page
+// (the actual end of today's history) rather than trusting page 1 alone.
+async function fetchFirstOiOfDay() {
+  const statEl = document.getElementById('val-oi-iv-open');
+  try {
+    const sinceIso = utcPlus7DayStartIso();
+    const MAX_PAGES = 20; // safety cap: 20 * 100 = 2000 commits/day
+    let page = 1;
+    let lastFullOrPartialPage = null;
+
+    while (page <= MAX_PAGES) {
+      const commitsUrl = `https://api.github.com/repos/${OI_REPO}/commits?path=${encodeURIComponent(OI_FILE_PATH)}&since=${sinceIso}&per_page=100&page=${page}`;
+      const cRes = await fetchWithTimeout(commitsUrl, 8000);
+      if (!cRes.ok) {
+        if (cRes.status === 403 || cRes.status === 429) throw new Error('GitHub API rate-limited (' + cRes.status + ')');
+        throw new Error('commits HTTP ' + cRes.status);
+      }
+      const commits = await cRes.json();
+      if (!Array.isArray(commits) || !commits.length) break; // no more commits — done paging
+      lastFullOrPartialPage = commits;
+      if (commits.length < 100) break; // short page = reached the oldest commits in range
+      page++;
+    }
+
+    if (!lastFullOrPartialPage || !lastFullOrPartialPage.length) {
+      if (statEl) statEl.title = '[oi-open] no commits found for today (since ' + sinceIso + ')';
+      return null;
+    }
+
+    // Oldest commit in the final page = earliest commit of the day
+    const earliest = lastFullOrPartialPage[lastFullOrPartialPage.length - 1];
+    const sha = earliest.sha;
+
+    const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
+    const rRes = await fetchWithTimeout(rawUrl, 8000);
+    if (!rRes.ok) throw new Error('raw HTTP ' + rRes.status);
+    const text = await rRes.text();
+    const parsed = parseIntraday(text);
+    const volRows = (parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
+    if (!volRows.length) {
+      if (statEl) statEl.title = '[oi-open] earliest commit ' + sha.slice(0,7) + ' had no usable IV rows';
+      return null;
+    }
+    const minIv = Math.min(...volRows.map(r => r.vol));
+    if (statEl) statEl.title = '[oi-open] from commit ' + sha.slice(0,7) + ' · ' + (earliest.commit?.author?.date || '');
+    return { minIv, sha };
+  } catch(e) {
+    console.warn('[oi-open] fetchFirstOiOfDay failed:', e.message);
+    if (statEl) statEl.title = '[oi-open] lookup failed: ' + e.message + ' — showing fallback value';
+    return null;
+  }
+}
+
+// Boot-time resolver: paint the cached value instantly (if any), then try
+// to replace it with the authoritative git-history value. If that lookup
+// fails (offline, rate-limited, no commits yet today), fetchData()'s own
+// first-fetch lock still runs as a fallback so the field never stays blank.
+async function initOiIvOpen() {
+  loadOiIvOpen();
+  const result = await fetchFirstOiOfDay();
+  if (result && result.minIv > 0) {
+    oiIvOpen = result.minIv;
+    saveOiIvOpen(result.minIv);
+    document.getElementById('val-oi-iv-open').textContent = (result.minIv * 100).toFixed(2) + '%';
+    syncGArrowAutoField();
+    render();
+  }
 }
 
 /* ================================================================
@@ -3541,7 +3640,7 @@ function scheduleSnaplogPoll() {
   BOOT
 ================================================================ */
 initGaugeBands();
-loadOiIvOpen();     // restore today's locked OI IV open from localStorage
+initOiIvOpen();     // resolve today's true first OI IV from git history (falls back to first-fetch lock)
 loadHistory();      // restore today's session history (localStorage fallback)
 loadHistoryFromApi(); // backfill from DB — overwrites localStorage with full day history
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
