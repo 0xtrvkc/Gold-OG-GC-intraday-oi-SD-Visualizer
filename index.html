@@ -1310,6 +1310,10 @@ svg.hist-svg {
 <!-- HISTORY CHART TOOLTIP -->
 <div id="hist-tooltip"></div>
 
+<!-- sql.js — used to read the vol2vol.db SQLite snapshot log for the
+     Intraday/OI "latest row" timestamps shown in the header -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+
 <script>
 /* ================================================================
   CONFIG
@@ -2461,10 +2465,6 @@ async function fetchData() {
       }
     }
 
-    const fmtTime = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
-    document.getElementById('status-intraday').textContent = 'Intraday: ' + fmtTime(intradayUpdatedAt);
-    document.getElementById('status-oi').textContent       = 'OI: '       + fmtTime(oiUpdatedAt);
-
     const now=new Date();
     statusTxt.textContent='Updated '+now.toLocaleTimeString();
     // Update title
@@ -2620,6 +2620,7 @@ document.getElementById('btn-refresh').addEventListener('click',()=>{
   fetchGoldPrice();
   fetchData();
   fetchMacro();
+  fetchSnaplogTimestamps();
   resetCountdown(parseInt(document.getElementById('sel-interval').value)/1000);
 });
 function resetMean() {
@@ -3458,6 +3459,81 @@ async function fetchMacro() {
 }
 
 /* ================================================================
+  SNAPSHOT-LOG TIMESTAMPS (Intraday / OI "latest row")
+  Reads the vol2vol.db SQLite file published by
+  https://0xtrvkc.github.io/itd-oi-db/ (source repo:
+  0xtrvkc/itd-oi-db, data/vol2vol.db) via sql.js, and shows the
+  fetched_at of the most recent row in the `intraday` / `oi` tables
+  — i.e. when the underlying data itself last actually changed —
+  instead of the local browser fetch clock.
+  The db is ~18MB and is only rewritten by the upstream collector
+  every ~5 min, so we poll it on a longer, independent timer rather
+  than on every fast auto-refresh tick.
+================================================================ */
+const SNAPLOG_DB_URL      = 'https://raw.githubusercontent.com/0xtrvkc/itd-oi-db/main/data/vol2vol.db';
+const SNAPLOG_POLL_MS     = 60000; // 60s — independent of the main auto-refresh interval
+
+let snaplogSqlPromise   = null;  // memoized initSqlJs() promise
+let snaplogFetching     = false; // re-entrancy guard
+let snaplogIntradayAt   = null;  // Date — latest intraday row's fetched_at
+let snaplogOiAt         = null;  // Date — latest oi row's fetched_at
+let snaplogTimer        = null;
+let snaplogLastError    = null;
+
+function fmtStatusTime(d) {
+  return d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+}
+
+function renderSnaplogStatus() {
+  const iEl = document.getElementById('status-intraday');
+  const oEl = document.getElementById('status-oi');
+  if (iEl) iEl.textContent = 'Intraday: ' + fmtStatusTime(snaplogIntradayAt) + (snaplogLastError && !snaplogIntradayAt ? ' (fetch failed)' : '');
+  if (oEl) oEl.textContent = 'OI: '       + fmtStatusTime(snaplogOiAt)       + (snaplogLastError && !snaplogOiAt       ? ' (fetch failed)' : '');
+}
+
+function getSqlJs() {
+  if (!snaplogSqlPromise) {
+    snaplogSqlPromise = initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}` });
+  }
+  return snaplogSqlPromise;
+}
+
+async function fetchSnaplogTimestamps() {
+  if (snaplogFetching) return; // don't overlap a slow 18MB fetch with another
+  if (typeof initSqlJs === 'undefined') return; // CDN script hasn't loaded yet
+  snaplogFetching = true;
+  try {
+    const SQL = await getSqlJs();
+    const res = await fetch(`${SNAPLOG_DB_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const db  = new SQL.Database(new Uint8Array(buf));
+    try {
+      const iRes = db.exec('SELECT MAX(fetched_at) FROM intraday');
+      const oRes = db.exec('SELECT MAX(fetched_at) FROM oi');
+      const iTs  = iRes[0] && iRes[0].values[0] ? iRes[0].values[0][0] : null;
+      const oTs  = oRes[0] && oRes[0].values[0] ? oRes[0].values[0][0] : null;
+      snaplogIntradayAt = iTs ? new Date(iTs) : null;
+      snaplogOiAt       = oTs ? new Date(oTs) : null;
+      snaplogLastError  = null;
+    } finally {
+      db.close();
+    }
+  } catch(e) {
+    snaplogLastError = e.message;
+    console.warn('[snaplog] fetch/parse failed:', e.message);
+  } finally {
+    snaplogFetching = false;
+    renderSnaplogStatus();
+  }
+}
+
+function scheduleSnaplogPoll() {
+  clearInterval(snaplogTimer);
+  snaplogTimer = setInterval(fetchSnaplogTimestamps, SNAPLOG_POLL_MS);
+}
+
+/* ================================================================
   BOOT
 ================================================================ */
 initGaugeBands();
@@ -3467,7 +3543,9 @@ loadHistoryFromApi(); // backfill from DB — overwrites localStorage with full 
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
+fetchSnaplogTimestamps(); // Intraday/OI header timestamps from the snapshot-log db
 scheduleRefresh();
+scheduleSnaplogPoll();
 render();
 renderHistCharts(); // draw whatever history was restored, before the first fetch lands
 </script>
