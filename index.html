@@ -869,19 +869,18 @@ footer {
 
 .hist-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 18px;
-}
-@media (max-width: 860px) {
-  .hist-grid { grid-template-columns: 1fr; }
 }
 
 .hist-box {
   border: 1px solid var(--line2);
   background: var(--bg1);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
+  transition: border-color 0.15s;
 }
+.hist-box:hover { border-color: var(--fg3); }
 
 .hist-header {
   display: flex;
@@ -971,6 +970,12 @@ svg.hist-svg {
   height: 0;
 }
 .hist-legend-item .lv { font-weight: 500; }
+.hist-legend-item .lval {
+  font-weight: 600;
+  color: var(--fg0);
+  font-variant-numeric: tabular-nums;
+}
+.hist-legend-item .lval:empty { display: none; }
 
 .hist-empty {
   padding: 40px 14px;
@@ -1004,6 +1009,23 @@ svg.hist-svg {
 }
 #hist-tooltip .htt-row { display: flex; align-items: center; gap: 6px; }
 #hist-tooltip .htt-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+@keyframes histLivePulse {
+  0%   { opacity: 0.55; r: 5.5; }
+  70%  { opacity: 0;    r: 9;   }
+  100% { opacity: 0;    r: 9;   }
+}
+.hist-live-halo {
+  animation: histLivePulse 1.8s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.hist-hover-x {
+  stroke: var(--fg3);
+  stroke-width: 1;
+  stroke-dasharray: 2,3;
+  pointer-events: none;
+}
 </style>
 </head>
 <body>
@@ -1242,7 +1264,7 @@ svg.hist-svg {
       <div class="hist-box">
         <div class="hist-header">
           <div class="hist-title-row">
-            <span class="hist-label">Vol Through the Day</span>
+            <span class="hist-label">Session Low IV</span>
           </div>
           <div class="hist-controls">
             <button id="btn-vol-trend-lin" class="toggle-btn active" onclick="toggleHistTrend('vol','lin')" title="Linear trendline">⟍ Linear</button>
@@ -1252,50 +1274,86 @@ svg.hist-svg {
         </div>
         <div class="hist-chart-shell">
           <svg class="hist-svg" id="hist-chart-vol" viewBox="0 0 800 190" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <defs id="hv-defs"></defs>
             <g id="g-hv-grid"></g>
+            <g id="g-hv-area"></g>
             <g id="g-hv-trend"></g>
             <g id="g-hv-line"></g>
             <g id="g-hv-points"></g>
+            <g id="g-hv-hover"></g>
             <g id="g-hv-hit"></g>
           </svg>
           <div class="hist-empty" id="hist-vol-empty">Waiting for first refresh tick…</div>
         </div>
         <div class="hist-xaxis" id="hist-vol-xaxis"></div>
         <div class="hist-legend">
-          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#9a9080;"></div><span class="lv" style="color:#9a9080">Recent IV</span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#9a9080;"></div><span class="lv" style="color:#9a9080">Session Low IV</span><span class="lval" id="leg-hv-vol"></span></div>
           <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#3a6ba0;"></div><span class="lv" style="color:#3a6ba0">Linear trend</span></div>
           <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#a06b3a;"></div><span class="lv" style="color:#a06b3a">Log trend</span></div>
         </div>
       </div>
 
-      <!-- CHART 2: PUT/CALL THROUGH THE DAY -->
+      <!-- CHART 2: INTRADAY CALLS/PUTS THROUGH THE DAY -->
       <div class="hist-box">
         <div class="hist-header">
           <div class="hist-title-row">
-            <span class="hist-label">Put/Call Through the Day</span>
+            <span class="hist-label">Intraday Calls/Puts</span>
           </div>
           <div class="hist-controls">
-            <button id="btn-pc-trend-lin" class="toggle-btn active" onclick="toggleHistTrend('pc','lin')" title="Linear trendlines">⟍ Linear</button>
-            <button id="btn-pc-trend-log" class="toggle-btn active" onclick="toggleHistTrend('pc','log')" title="Logarithmic trendlines">⟋ Log</button>
+            <button id="btn-intraday-trend-lin" class="toggle-btn active" onclick="toggleHistTrend('intraday','lin')" title="Linear trendlines">⟍ Linear</button>
+            <button id="btn-intraday-trend-log" class="toggle-btn active" onclick="toggleHistTrend('intraday','log')" title="Logarithmic trendlines">⟋ Log</button>
           </div>
-          <span class="hist-meta" id="hist-pc-meta">—</span>
+          <span class="hist-meta" id="hist-intraday-meta">—</span>
         </div>
         <div class="hist-chart-shell">
-          <svg class="hist-svg" id="hist-chart-pc" viewBox="0 0 800 190" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-            <g id="g-hp-grid"></g>
-            <g id="g-hp-trend"></g>
-            <g id="g-hp-line"></g>
-            <g id="g-hp-points"></g>
-            <g id="g-hp-hit"></g>
+          <svg class="hist-svg" id="hist-chart-intraday" viewBox="0 0 800 190" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <g id="g-hi-grid"></g>
+            <g id="g-hi-trend"></g>
+            <g id="g-hi-line"></g>
+            <g id="g-hi-points"></g>
+            <g id="g-hi-hover"></g>
+            <g id="g-hi-hit"></g>
           </svg>
-          <div class="hist-empty" id="hist-pc-empty">Waiting for first refresh tick…</div>
+          <div class="hist-empty" id="hist-intraday-empty">Waiting for first refresh tick…</div>
         </div>
-        <div class="hist-xaxis" id="hist-pc-xaxis"></div>
+        <div class="hist-xaxis" id="hist-intraday-xaxis"></div>
         <div class="hist-legend">
-          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#1a3a6b;"></div><span class="lv" style="color:#1a3a6b">Intraday Calls</span></div>
-          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#c9920a;"></div><span class="lv" style="color:#c9920a">Intraday Puts</span></div>
-          <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#1a3a6b;"></div><span class="lv" style="color:#1a3a6b">OI Calls</span></div>
-          <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#c9920a;"></div><span class="lv" style="color:#c9920a">OI Puts</span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#1a3a6b;"></div><span class="lv" style="color:#1a3a6b">Intraday Calls</span><span class="lval" id="leg-hi-intraCall"></span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#c9920a;"></div><span class="lv" style="color:#c9920a">Intraday Puts</span><span class="lval" id="leg-hi-intraPut"></span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#3a6ba0;"></div><span class="lv" style="color:#3a6ba0">Linear trend</span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#a06b3a;"></div><span class="lv" style="color:#a06b3a">Log trend</span></div>
+        </div>
+      </div>
+
+      <!-- CHART 3: OI CALLS/PUTS THROUGH THE DAY -->
+      <div class="hist-box">
+        <div class="hist-header">
+          <div class="hist-title-row">
+            <span class="hist-label">OI Calls/Puts</span>
+          </div>
+          <div class="hist-controls">
+            <button id="btn-oi-trend-lin" class="toggle-btn active" onclick="toggleHistTrend('oi','lin')" title="Linear trendlines">⟍ Linear</button>
+            <button id="btn-oi-trend-log" class="toggle-btn active" onclick="toggleHistTrend('oi','log')" title="Logarithmic trendlines">⟋ Log</button>
+          </div>
+          <span class="hist-meta" id="hist-oi-meta">—</span>
+        </div>
+        <div class="hist-chart-shell">
+          <svg class="hist-svg" id="hist-chart-oi" viewBox="0 0 800 190" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <g id="g-ho-grid"></g>
+            <g id="g-ho-trend"></g>
+            <g id="g-ho-line"></g>
+            <g id="g-ho-points"></g>
+            <g id="g-ho-hover"></g>
+            <g id="g-ho-hit"></g>
+          </svg>
+          <div class="hist-empty" id="hist-oi-empty">Waiting for first refresh tick…</div>
+        </div>
+        <div class="hist-xaxis" id="hist-oi-xaxis"></div>
+        <div class="hist-legend">
+          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#1a3a6b;"></div><span class="lv" style="color:#1a3a6b">OI Calls</span><span class="lval" id="leg-ho-oiCall"></span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#c9920a;"></div><span class="lv" style="color:#c9920a">OI Puts</span><span class="lval" id="leg-ho-oiPut"></span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#3a6ba0;"></div><span class="lv" style="color:#3a6ba0">Linear trend</span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#a06b3a;"></div><span class="lv" style="color:#a06b3a">Log trend</span></div>
         </div>
       </div>
 
@@ -1364,7 +1422,7 @@ let garrowIvOverride = null;
 
 // Session history (vol-through-day, put/call-through-day)
 let gcfHistory = [];                          // [{t, vol, intraCall, intraPut, oiCall, oiPut}]
-let histTrend  = { vol: { lin: true, log: true }, pc: { lin: true, log: true } };
+let histTrend  = { vol: { lin: true, log: true }, intraday: { lin: true, log: true }, oi: { lin: true, log: true } };
 
 /* ================================================================
   MATH
@@ -2880,7 +2938,21 @@ document.getElementById('inp-garrow-iv').addEventListener('input', function() {
 const HIST_KEY = 'gcf_session_history_v1';
 const HIST_MAX_POINTS = 2000; // sane ceiling even at 10s interval over a long session
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+// Returns a stable key identifying which 1am-to-1am *local* trading day a
+// moment belongs to — matches dayWindow()'s boundary exactly.
+// Deliberately NOT a UTC date string: toISOString() always reports the UTC
+// calendar date, which disagrees with the local trading day for most of the
+// day in any timezone far from UTC (e.g. UTC+7 Bangkok — from 7am local
+// onward, "today" in UTC terms is already local tomorrow's UTC date... or
+// rather, the reverse: the day-window's first point, anchored at 1am local,
+// sits on UTC "yesterday" for the entire rest of the local day). That
+// mismatch made this rollover check misfire on almost every refresh tick,
+// wiping gcfHistory back down to a single point each time.
+function dayKeyFor(t) {
+  const shifted = new Date(t - 1 * 3600 * 1000); // shift so the key flips at 1am local, not midnight
+  return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;
+}
+function todayStr() { return dayKeyFor(Date.now()); }
 
 function loadHistory() {
   try {
@@ -2953,8 +3025,9 @@ function recordHistoryPoint() {
     oiCall:    oiData ? parseNum(oiData.callTotal) : null,
     oiPut:     oiData ? parseNum(oiData.putTotal)  : null,
   };
-  // Roll over to a fresh array if the calendar day changed since last point
-  if (gcfHistory.length && new Date(gcfHistory[0].t).toISOString().slice(0,10) !== todayStr()) {
+  // Roll over to a fresh array if the local trading day changed since the
+  // first stored point (dayKeyFor matches dayWindow()'s 1am-local boundary).
+  if (gcfHistory.length && dayKeyFor(gcfHistory[0].t) !== todayStr()) {
     gcfHistory = [];
   }
   gcfHistory.push(point);
@@ -2974,7 +3047,7 @@ function recordHistoryPoint() {
   Trendline regression uses point-index (evenly spaced) so the
   math is unaffected by the time-based x positioning.
 ================================================================ */
-const HCFG = { W: 800, H: 190, PAD_L: 38, PAD_R: 14, PAD_T: 14, PAD_B: 10 };
+const HCFG = { W: 800, H: 190, PAD_L: 46, PAD_R: 14, PAD_T: 16, PAD_B: 10 };
 
 // Returns the fixed day window: 01:00 local today → 01:00 local tomorrow.
 // All history point timestamps map into this 24-hour span.
@@ -2985,10 +3058,20 @@ function dayWindow() {
   return { tStart: start.getTime(), tEnd: end.getTime() };
 }
 
-function histLayout(vMin, vMax) {
+// minSpan: floor on (vMax - vMin) before padding is applied. Without this, a
+// nearly-flat series (e.g. a running session-low that only ticked down by a
+// few hundredths of a point) gets auto-zoomed so hard that ordinary noise
+// reads as a dramatic cliff. Enforcing a minimum visual span keeps small,
+// real moves looking small.
+function histLayout(vMin, vMax, minSpan) {
   const pL = HCFG.PAD_L, pR = HCFG.W - HCFG.PAD_R;
   const pT = HCFG.PAD_T, pB = HCFG.H - HCFG.PAD_B;
   if (vMax - vMin < 1e-9) { vMax = vMin + 1; }
+  if (minSpan && (vMax - vMin) < minSpan) {
+    const mid = (vMax + vMin) / 2;
+    vMin = mid - minSpan / 2;
+    vMax = mid + minSpan / 2;
+  }
   const padV = (vMax - vMin) * 0.08;
   const yLo = vMin - padV, yHi = vMax + padV;
   const { tStart, tEnd } = dayWindow();
@@ -3000,13 +3083,31 @@ function histLayout(vMin, vMax) {
   };
 }
 
-// Draws a faint horizontal gridline set (25/50/75%) — same convention as drawGrid()
-function drawHistGrid(gridGroupId, L) {
+// Draws a faint horizontal gridline set (25/50/75%) plus y-axis value labels
+// (top/mid/bottom) so the reader can tell how big a move actually is instead
+// of just seeing an unlabeled wiggle. fmtVal formats a raw value → label text.
+function drawHistGrid(gridGroupId, L, fmtVal) {
   const g = clearG(gridGroupId);
   g.appendChild(el('line',{x1:L.pL,y1:L.pB,x2:L.pR,y2:L.pB,stroke:tc('#c8bfb0','#2a2a2a'),'stroke-width':'1'}));
   for (const f of [0.25,0.5,0.75]) {
     const sy = M.scale(f,0,1,L.pB,L.pT);
     g.appendChild(el('line',{x1:L.pL,y1:sy,x2:L.pR,y2:sy,stroke:tc('#d8d0c4','#1c1c1c'),'stroke-width':'0.5','stroke-dasharray':'2,4'}));
+  }
+  if (fmtVal) {
+    const labelColor = tc('#a09890','#606060');
+    [
+      { f: 1,    y: L.pT+2, baseline: 'hanging' },
+      { f: 0.5,  y: (L.pT+L.pB)/2, baseline: 'middle' },
+      { f: 0,    y: L.pB-2, baseline: 'auto' },
+    ].forEach(({f, y, baseline}) => {
+      const val = L.yLo + f * (L.yHi - L.yLo);
+      const t = el('text', {
+        x: L.pL - 7, y, 'text-anchor':'end', 'dominant-baseline':baseline,
+        'font-size':'8.5','font-family':'IBM Plex Mono,monospace', fill: labelColor,
+      });
+      t.textContent = fmtVal(val);
+      g.appendChild(t);
+    });
   }
 }
 
@@ -3039,9 +3140,55 @@ function drawHistSeries(g, L, points, idxs, color, width) {
   g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:color,'stroke-width':width||'1.5','stroke-linejoin':'round','stroke-linecap':'round'}));
 }
 
+// Builds a "step-after" staircase path: flat while the value holds, a sharp
+// vertical drop the instant it changes. This is the honest shape for a
+// running minimum (it really is flat-then-drop, not a smooth curve) and
+// reads as a clean, intentional staircase instead of a jagged line.
+function stepPathPoints(L, idxs, valByIdx) {
+  return idxs.map(i => [L.toX(gcfHistory[i].t), L.toY(valByIdx[i])]);
+}
+function stepLineD(pts) {
+  if (!pts.length) return '';
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let k = 1; k < pts.length; k++) {
+    d += ` L${pts[k][0]},${pts[k-1][1]} L${pts[k][0]},${pts[k][1]}`;
+  }
+  return d;
+}
+function stepAreaD(L, pts) {
+  if (!pts.length) return '';
+  let d = `M${pts[0][0]},${L.pB} L${pts[0][0]},${pts[0][1]}`;
+  for (let k = 1; k < pts.length; k++) {
+    d += ` L${pts[k][0]},${pts[k-1][1]} L${pts[k][0]},${pts[k][1]}`;
+  }
+  d += ` L${pts[pts.length-1][0]},${L.pB} Z`;
+  return d;
+}
+
+// (Re)creates a top-to-bottom fade gradient in the given <defs> element and
+// returns its url() reference — regenerated every render so it tracks the
+// current theme's line color.
+function makeAreaGradient(defsId, gradId, color) {
+  const defs = clearG(defsId);
+  const grad = el('linearGradient', {id: gradId, x1:'0', y1:'0', x2:'0', y2:'1'});
+  grad.appendChild(el('stop', {offset:'0%',  'stop-color': color, 'stop-opacity':'0.25'}));
+  grad.appendChild(el('stop', {offset:'100%','stop-color': color, 'stop-opacity':'0'}));
+  defs.appendChild(grad);
+  return `url(#${gradId})`;
+}
+
+// Compact number formatter for the put/call chart's y-axis (contract counts
+// can run into the thousands) — e.g. 1991 → "1.99K".
+function fmtCompactNum(v) {
+  const abs = Math.abs(v);
+  if (abs >= 1000) return (v/1000).toFixed(2) + 'K';
+  return Math.round(v).toLocaleString();
+}
+
 function renderHistCharts() {
   renderVolHistChart();
-  renderPcHistChart();
+  renderIntradayHistChart();
+  renderOiHistChart();
 }
 
 /* ── CHART 1: VOL THROUGH THE DAY ── */
@@ -3054,9 +3201,20 @@ function renderVolHistChart() {
   const idxs = []; const vals = [];
   // liveData.vol is already a percentage-point number (e.g. 31.74 = 31.74%),
   // same convention as the existing "Recent IV" stat display — no *100 needed.
-  gcfHistory.forEach((p,i) => { if (p.vol != null) { idxs.push(i); vals.push(p.vol); } });
+  // Plot the RUNNING SESSION LOW instead of the raw tick — a non-increasing
+  // "lowest IV seen so far today" line, so the chart tracks how far
+  // volatility has compressed through the session rather than every wiggle.
+  let runningLow = Infinity;
+  gcfHistory.forEach((p,i) => {
+    if (p.vol != null) {
+      runningLow = Math.min(runningLow, p.vol);
+      idxs.push(i);
+      vals.push(runningLow);
+    }
+  });
 
   if (idxs.length === 0) {
+    if (shell.dataset.hasData === '1') return;
     shell.style.display = 'none';
     empty.style.display = 'block';
     meta.textContent = '—';
@@ -3065,11 +3223,14 @@ function renderVolHistChart() {
   }
   shell.style.display = 'block';
   empty.style.display = 'none';
+  shell.dataset.hasData = '1';
 
   const vMin = Math.min(...vals), vMax = Math.max(...vals);
-  const L = histLayout(vMin, vMax);
+  // Floor the visible span at 1.0 percentage point so a session that's only
+  // moved a few hundredths doesn't get zoomed into looking like a canyon.
+  const L = histLayout(vMin, vMax, 1.0);
 
-  drawHistGrid('g-hv-grid', L);
+  drawHistGrid('g-hv-grid', L, v => v.toFixed(2) + '%');
 
   // Trendlines — regression in index-space, rendered across actual timestamp span
   const trendG = clearG('g-hv-trend');
@@ -3082,128 +3243,172 @@ function renderVolHistChart() {
     if (fit) drawTrendline(trendG, L, idxs, fit.predict, tc('#a06b3a','#c08a5a'), true);
   }
 
-  // Series line — keyed by index, positioned by timestamp
+  // Series — keyed by index, positioned by timestamp. Rendered as a clean
+  // step-after staircase (flat while the low holds, sharp drop when it's
+  // broken) since that's the true shape of a running minimum, plus a soft
+  // gradient fill for visual weight.
   const valByIdx = {}; idxs.forEach((i,k)=>valByIdx[i]=vals[k]);
+  const lineColor = tc('#9a9080','#a8a090');
+  const pts = stepPathPoints(L, idxs, valByIdx);
+
+  const areaG = clearG('g-hv-area');
+  if (pts.length >= 2) {
+    const fillUrl = makeAreaGradient('hv-defs', 'hv-grad', lineColor);
+    areaG.appendChild(el('path', { d: stepAreaD(L, pts), fill: fillUrl, stroke: 'none' }));
+  }
+
   const lineG = clearG('g-hv-line');
-  drawHistSeries(lineG, L, valByIdx, idxs, tc('#9a9080','#a8a090'), '1.5');
+  if (pts.length >= 2) {
+    lineG.appendChild(el('path', { d: stepLineD(pts), fill:'none', stroke:lineColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+  } else if (pts.length === 1) {
+    lineG.appendChild(el('circle', { cx: pts[0][0], cy: pts[0][1], r:'2.5', fill:lineColor }));
+  }
 
-  // Endpoint dots at first/last recorded point
+  // Endpoint dots — a plain dot at the first point, a live pulsing dot at the last
   const ptsG = clearG('g-hv-points');
-  [idxs[0], idxs[idxs.length-1]].forEach(i => {
-    ptsG.appendChild(el('circle',{cx:L.toX(gcfHistory[i].t),cy:L.toY(valByIdx[i]),r:'2.5',fill:tc('#9a9080','#a8a090')}));
-  });
+  ptsG.appendChild(el('circle',{cx:pts[0][0],cy:pts[0][1],r:'2.5',fill:lineColor}));
+  const lastPt = pts[pts.length-1];
+  ptsG.appendChild(el('circle',{cx:lastPt[0],cy:lastPt[1],r:'5.5',fill:lineColor,opacity:'0.55',class:'hist-live-halo'}));
+  ptsG.appendChild(el('circle',{cx:lastPt[0],cy:lastPt[1],r:'2.75',fill:lineColor}));
 
-  buildHistHitzones('g-hv-hit', L, idxs, [{key:'vol', label:'Recent IV', color:tc('#9a9080','#a8a090'), valByIdx}]);
+  buildHistHitzones('g-hv-hit', 'g-hv-hover', L, idxs, [{key:'vol', label:'Session Low IV', color:lineColor, valByIdx}]);
 
   drawHistXAxis('hist-vol-xaxis', L);
 
   const last = vals[vals.length-1];
-  meta.textContent = `${idxs.length} pts  ·  last ${last.toFixed(2)}%`;
+  meta.textContent = `${idxs.length} pts  ·  session low ${last.toFixed(2)}%`;
+  const legVal = document.getElementById('leg-hv-vol');
+  if (legVal) legVal.textContent = last.toFixed(2) + '%';
 }
 
-/* ── CHART 2: PUT/CALL THROUGH THE DAY ── */
-function renderPcHistChart() {
-  const shell = document.getElementById('hist-chart-pc');
-  const empty = document.getElementById('hist-pc-empty');
-  const meta  = document.getElementById('hist-pc-meta');
+/* ── CHART 2 & 3: INTRADAY CALLS/PUTS, OI CALLS/PUTS ──
+   Both are the same "two-series through the day" shape (a call line + a put
+   line), just fed from different fields — pulled out into one shared
+   renderer instead of two near-duplicate functions. */
+function renderTwoSeriesHistChart(opts) {
+  const { prefix, g, callKey, putKey, callLabel, putLabel, forwardFill, trendKey, metaFn } = opts;
+  const shell = document.getElementById(`hist-chart-${prefix}`);
+  const empty = document.getElementById(`hist-${prefix}-empty`);
+  const meta  = document.getElementById(`hist-${prefix}-meta`);
   if (!shell) return;
 
-  const series = {
-    intraCall: { idxs: [], vals: [], color: tc('#1a3a6b','#4a7ac8'), label: 'Intraday Calls', dashed: false },
-    intraPut:  { idxs: [], vals: [], color: tc('#c9920a','#d4a830'), label: 'Intraday Puts',  dashed: false },
-    oiCall:    { idxs: [], vals: [], color: tc('#1a3a6b','#4a7ac8'), label: 'OI Calls',        dashed: true  },
-    oiPut:     { idxs: [], vals: [], color: tc('#c9920a','#d4a830'), label: 'OI Puts',         dashed: true  },
-  };
-  // Forward-fill OI values across ticks where the database hasn't refreshed
-  // open interest yet. OI updates far less often than intraday volume (it's
-  // pulled from a slower-moving database snapshot), so most raw points have
-  // oiCall/oiPut === null. Without filling, the OI lines only show a handful
-  // of scattered dots instead of a continuous history — carry the last known
-  // OI value forward so the line spans the full session.
-  let lastOiCall = null, lastOiPut = null;
-  const oiFilled = gcfHistory.map(p => {
-    if (p.oiCall != null) lastOiCall = p.oiCall;
-    if (p.oiPut  != null) lastOiPut  = p.oiPut;
-    return {
-      oiCall: p.oiCall != null ? p.oiCall : lastOiCall,
-      oiPut:  p.oiPut  != null ? p.oiPut  : lastOiPut,
-    };
-  });
+  const callColor = tc('#1a3a6b','#4a7ac8');
+  const putColor  = tc('#c9920a','#d4a830');
 
+  let callOf = i => gcfHistory[i][callKey];
+  let putOf  = i => gcfHistory[i][putKey];
+  if (forwardFill) {
+    // Forward-fill across ticks where the database hasn't refreshed this
+    // field yet (OI updates far less often than intraday volume), so the
+    // line spans the full session instead of a handful of scattered dots.
+    let lastCall = null, lastPut = null;
+    const filled = gcfHistory.map(p => {
+      if (p[callKey] != null) lastCall = p[callKey];
+      if (p[putKey]  != null) lastPut  = p[putKey];
+      return { call: p[callKey] != null ? p[callKey] : lastCall, put: p[putKey] != null ? p[putKey] : lastPut };
+    });
+    callOf = i => filled[i].call;
+    putOf  = i => filled[i].put;
+  }
+
+  const callIdxs = [], callVals = [], putIdxs = [], putVals = [];
   gcfHistory.forEach((p,i) => {
-    for (const k of Object.keys(series)) {
-      const v = (k === 'oiCall' || k === 'oiPut') ? oiFilled[i][k] : p[k];
-      if (v != null) { series[k].idxs.push(i); series[k].vals.push(v); }
-    }
+    const cv = callOf(i), pv = putOf(i);
+    if (cv != null) { callIdxs.push(i); callVals.push(cv); }
+    if (pv != null) { putIdxs.push(i);  putVals.push(pv); }
   });
 
-  const anyPoints = Object.values(series).some(s => s.idxs.length > 0);
-  if (!anyPoints) {
+  if (!callIdxs.length && !putIdxs.length) {
+    // Sticky-data guard: once this chart has ever shown real data, never
+    // fall back to the empty placeholder on a later pass — a transient gap
+    // (e.g. a failed refresh) should leave the last good render on screen
+    // instead of blanking it out.
+    if (shell.dataset.hasData === '1') return;
     shell.style.display = 'none';
     empty.style.display = 'block';
     meta.textContent = '—';
-    document.getElementById('hist-pc-xaxis').innerHTML = '';
+    document.getElementById(`hist-${prefix}-xaxis`).innerHTML = '';
     return;
   }
   shell.style.display = 'block';
   empty.style.display = 'none';
+  shell.dataset.hasData = '1';
 
-  const n = gcfHistory.length;
-  const allVals = Object.values(series).flatMap(s => s.vals);
+  const allVals = [...callVals, ...putVals];
   const vMin = Math.min(...allVals), vMax = Math.max(...allVals);
-  const L = histLayout(vMin, vMax);
+  // Floor the span at 5% of the max value so small OI/volume ticks don't
+  // get zoomed into looking like violent swings.
+  const L = histLayout(vMin, vMax, vMax * 0.05);
 
-  drawHistGrid('g-hp-grid', L);
+  drawHistGrid(`g-${g}-grid`, L, fmtCompactNum);
 
-  const trendG = clearG('g-hp-trend');
-  for (const k of Object.keys(series)) {
-    const s = series[k];
+  const series = [
+    { key: callKey, idxs: callIdxs, vals: callVals, color: callColor, label: callLabel, legId: `leg-${g}-${callKey}` },
+    { key: putKey,  idxs: putIdxs,  vals: putVals,  color: putColor,  label: putLabel,  legId: `leg-${g}-${putKey}`  },
+  ];
+
+  const trendG = clearG(`g-${g}-trend`);
+  for (const s of series) {
     if (s.idxs.length < 2) continue;
-    if (histTrend.pc.lin) {
+    if (histTrend[trendKey].lin) {
       const fit = M.linFit(s.idxs, s.vals);
       if (fit) drawTrendline(trendG, L, s.idxs, x => fit.a + fit.b*x, s.color, true);
     }
-    if (histTrend.pc.log) {
+    if (histTrend[trendKey].log) {
       const fit = M.logFit(s.idxs, s.vals);
       if (fit) drawTrendline(trendG, L, s.idxs, fit.predict, s.color, true);
     }
   }
 
-  const lineG = clearG('g-hp-line');
-  const ptsG  = clearG('g-hp-points');
+  const lineG = clearG(`g-${g}-line`);
+  const ptsG  = clearG(`g-${g}-points`);
   const hitSeries = [];
-  for (const k of Object.keys(series)) {
-    const s = series[k];
+  for (const s of series) {
     if (!s.idxs.length) continue;
     const valByIdx = {}; s.idxs.forEach((i,j)=>valByIdx[i]=s.vals[j]);
-    if (s.dashed) {
-      const pts = s.idxs.map(i => `${L.toX(gcfHistory[i].t)},${L.toY(valByIdx[i])}`);
-      if (pts.length >= 2) {
-        lineG.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:s.color,'stroke-width':'1.25','stroke-dasharray':'3,2','stroke-linejoin':'round','stroke-linecap':'round',opacity:'0.9'}));
-      }
-    } else {
-      drawHistSeries(lineG, L, valByIdx, s.idxs, s.color, '1.5');
-    }
+    drawHistSeries(lineG, L, valByIdx, s.idxs, s.color, '1.75');
     const lastI = s.idxs[s.idxs.length-1];
-    ptsG.appendChild(el('circle',{cx:L.toX(gcfHistory[lastI].t),cy:L.toY(valByIdx[lastI]),r:'2.5',fill:s.color}));
-    hitSeries.push({ key:k, label:s.label, color:s.color, valByIdx });
+    const lx = L.toX(gcfHistory[lastI].t), ly = L.toY(valByIdx[lastI]);
+    ptsG.appendChild(el('circle',{cx:lx,cy:ly,r:'5.5',fill:s.color,opacity:'0.5',class:'hist-live-halo'}));
+    ptsG.appendChild(el('circle',{cx:lx,cy:ly,r:'2.75',fill:s.color}));
+    hitSeries.push({ key:s.key, label:s.label, color:s.color, valByIdx });
+
+    const legVal = document.getElementById(s.legId);
+    if (legVal) legVal.textContent = fmtCompactNum(valByIdx[lastI]);
   }
 
-  const allIdxs = [...new Set(Object.values(series).flatMap(s=>s.idxs))].sort((a,b)=>a-b);
-  buildHistHitzones('g-hp-hit', L, allIdxs, hitSeries);
+  const allIdxs = [...new Set([...callIdxs, ...putIdxs])].sort((a,b)=>a-b);
+  buildHistHitzones(`g-${g}-hit`, `g-${g}-hover`, L, allIdxs, hitSeries);
 
-  drawHistXAxis('hist-pc-xaxis', L);
+  drawHistXAxis(`hist-${prefix}-xaxis`, L);
 
-  const lastCall = series.intraCall.vals[series.intraCall.vals.length-1];
-  const lastPut  = series.intraPut.vals[series.intraPut.vals.length-1];
-  const pcRatio  = (lastCall && lastPut) ? (lastPut/lastCall).toFixed(2) : '—';
-  meta.textContent = `P/C ratio (intraday) ${pcRatio}`;
+  meta.textContent = metaFn(callVals[callVals.length-1], putVals[putVals.length-1]);
+}
+
+function renderIntradayHistChart() {
+  renderTwoSeriesHistChart({
+    prefix: 'intraday', g: 'hi', callKey: 'intraCall', putKey: 'intraPut',
+    callLabel: 'Intraday Calls', putLabel: 'Intraday Puts',
+    forwardFill: false, trendKey: 'intraday',
+    metaFn: (c,p) => (c && p) ? `P/C ratio (intraday) ${(p/c).toFixed(2)}` : '—',
+  });
+}
+
+function renderOiHistChart() {
+  renderTwoSeriesHistChart({
+    prefix: 'oi', g: 'ho', callKey: 'oiCall', putKey: 'oiPut',
+    callLabel: 'OI Calls', putLabel: 'OI Puts',
+    forwardFill: true, trendKey: 'oi',
+    metaFn: (c,p) => (c && p) ? `OI P/C ratio ${(p/c).toFixed(2)}` : '—',
+  });
 }
 
 // Builds invisible vertical hit-strips positioned by real timestamp so hovering anywhere
-// near a point shows a tooltip with every series' value at that index.
-function buildHistHitzones(groupId, L, idxs, seriesDefs) {
+// near a point shows a tooltip with every series' value at that index, plus a
+// crosshair guide line and highlighted dots on the hovered column.
+function buildHistHitzones(groupId, hoverGroupId, L, idxs, seriesDefs) {
   const g = clearG(groupId);
+  const hoverG = clearG(hoverGroupId);
   if (!idxs.length) return;
   const tooltip = document.getElementById('hist-tooltip');
 
@@ -3229,6 +3434,14 @@ function buildHistHitzones(groupId, L, idxs, seriesDefs) {
       const t = new Date(gcfHistory[i].t);
       tooltip.innerHTML = `<div class="htt-time">${t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div>${rows}`;
       tooltip.style.display = 'block';
+
+      // Crosshair + highlighted dots on the hovered column
+      while (hoverG.firstChild) hoverG.removeChild(hoverG.firstChild);
+      hoverG.appendChild(el('line', { x1:cx, y1:L.pT, x2:cx, y2:L.pB, class:'hist-hover-x' }));
+      seriesDefs.forEach(s => {
+        if (s.valByIdx[i] == null) return;
+        hoverG.appendChild(el('circle', { cx, cy: L.toY(s.valByIdx[i]), r:'3.5', fill: s.color, stroke: tc('#f8f4ee','#0a0a0a'), 'stroke-width':'1.5' }));
+      });
     });
     rect.addEventListener('mousemove', (ev) => {
       const ttRect = tooltip.getBoundingClientRect();
@@ -3240,7 +3453,10 @@ function buildHistHitzones(groupId, L, idxs, seriesDefs) {
       tooltip.style.left = Math.max(margin, left) + 'px';
       tooltip.style.top  = Math.max(margin, top)  + 'px';
     });
-    rect.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+    rect.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+      while (hoverG.firstChild) hoverG.removeChild(hoverG.firstChild);
+    });
     g.appendChild(rect);
   });
 }
@@ -3687,12 +3903,125 @@ function scheduleSnaplogPoll() {
 }
 
 /* ================================================================
+  DB-BACKED HISTORY LOADER
+  loadHistoryFromApi() above only works when a local api.py server is
+  running (dev/localhost). Once this page is hosted on GitHub Pages
+  there is no localhost:5000, so the Session History charts would sit
+  empty until enough live ticks accumulate in-browser.
+  This loader reconstructs today's full history directly from the
+  public itd-oi-db (https://0xtrvkc.github.io/itd-oi-db/, same
+  vol2vol.db already used for the snapshot-log timestamps) via sql.js,
+  so the chart is populated the moment the page opens — no server
+  required. It fetches its own copy of the db (independent from the
+  snaplog poller) to keep the two features decoupled.
+================================================================ */
+async function loadHistoryFromDb(retriesLeft = 10) {
+  try {
+    if (typeof initSqlJs === 'undefined') {
+      // Boot can fire before the sql-wasm.js <script> tag finishes loading.
+      // Retry briefly instead of giving up — no polling loop needed since
+      // this only runs once at startup (renderHistCharts + the snaplog
+      // poller take over after that).
+      if (retriesLeft > 0) { setTimeout(() => loadHistoryFromDb(retriesLeft - 1), 500); return; }
+      throw new Error('sql.js failed to load');
+    }
+    const SQL = await getSqlJs();
+    const res = await fetch(`${SNAPLOG_DB_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const db = new SQL.Database(new Uint8Array(buf));
+    try {
+      const { tStart, tEnd } = dayWindow();
+      const startIso = new Date(tStart).toISOString();
+      const endIso   = new Date(tEnd).toISOString();
+
+      // intraday: one row per strike per snapshot, but vol/call_oi/put_oi are
+      // constant across strikes for a given fetched_at — MIN() just collapses
+      // the duplicates down to a single value per timestamp.
+      const iRes = db.exec(
+        `SELECT fetched_at, MIN(vol) AS vol, MIN(call_oi) AS call_oi, MIN(put_oi) AS put_oi
+         FROM intraday
+         WHERE fetched_at >= '${startIso}' AND fetched_at < '${endIso}'
+         GROUP BY fetched_at ORDER BY fetched_at ASC`
+      );
+      // oi: same shape, but refreshed far less often (used for the OI Calls/Puts
+      // chart, which forward-fills gaps in renderOiHistChart already).
+      const oRes = db.exec(
+        `SELECT fetched_at, MIN(call_oi) AS call_oi, MIN(put_oi) AS put_oi
+         FROM oi
+         WHERE fetched_at >= '${startIso}' AND fetched_at < '${endIso}'
+         GROUP BY fetched_at ORDER BY fetched_at ASC`
+      );
+
+      const oiByT = {};
+      if (oRes[0]) {
+        for (const row of oRes[0].values) {
+          oiByT[new Date(row[0]).getTime()] = { oiCall: row[1], oiPut: row[2] };
+        }
+      }
+
+      const dbPoints = [];
+      if (iRes[0]) {
+        for (const row of iRes[0].values) {
+          const t = new Date(row[0]).getTime();
+          const oiv = oiByT[t];
+          dbPoints.push({
+            t,
+            vol:       row[1],
+            intraCall: row[2],
+            intraPut:  row[3],
+            oiCall:    oiv ? oiv.oiCall : null,
+            oiPut:     oiv ? oiv.oiPut  : null,
+          });
+        }
+      }
+
+      if (dbPoints.length) {
+        // Upsert by timestamp rather than replacing the array outright. This
+        // function is called both once at boot and again on a slow repeating
+        // timer (see BOOT below) to self-heal from a slow/partial first load
+        // or a live tick that got missed — with an upsert, a later pass only
+        // ever *fills in or refines* points, so the chart holds whatever it's
+        // already showing and just updates in place when better data shows
+        // up, instead of ever going blank mid-refresh.
+        const byT = new Map(gcfHistory.map(p => [p.t, p]));
+        for (const dp of dbPoints) {
+          const existing = byT.get(dp.t);
+          if (!existing) { byT.set(dp.t, dp); continue; }
+          const merged = { ...existing };
+          for (const k of ['vol','intraCall','intraPut','oiCall','oiPut']) {
+            if (dp[k] != null) merged[k] = dp[k];
+          }
+          byT.set(dp.t, merged);
+        }
+        const merged = Array.from(byT.values()).sort((a,b) => a.t - b.t);
+        gcfHistory = merged.length > HIST_MAX_POINTS ? merged.slice(-HIST_MAX_POINTS) : merged;
+
+        saveHistory();
+        renderHistCharts();
+        console.log(`[history] synced ${dbPoints.length} points from public db — ${gcfHistory.length} total`);
+      }
+    } finally {
+      db.close();
+    }
+  } catch(e) {
+    console.log('[history] db history load failed:', e.message);
+  }
+}
+
+/* ================================================================
   BOOT
 ================================================================ */
 initGaugeBands();
 initOiIvOpen();     // resolve today's true first OI IV from git history (falls back to first-fetch lock)
 loadHistory();      // restore today's session history (localStorage fallback)
-loadHistoryFromApi(); // backfill from DB — overwrites localStorage with full day history
+loadHistoryFromApi(); // backfill from local api.py server, if running (dev/localhost only)
+loadHistoryFromDb();  // backfill from the public itd-oi-db — works everywhere, incl. GitHub Pages
+// Re-sync with the public db every 3 min. loadHistoryFromDb() upserts rather
+// than replaces, so this only ever fills in points the live feed missed or
+// refines ones the db has since caught up on — the charts keep showing
+// whatever they already have the whole time, no blank/flash in between.
+setInterval(loadHistoryFromDb, 3 * 60 * 1000);
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
