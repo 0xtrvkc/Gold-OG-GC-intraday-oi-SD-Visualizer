@@ -1059,6 +1059,7 @@ svg.hist-svg {
 </a>
       </div>
       <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;line-height:1.4;">⏳ Fetching GC=F…</div>
+      <div id="status-oi-iv-open" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;line-height:1.4;text-align:right;max-width:280px;">IV@1DTE: —</div>
     </div>
   </header>
 
@@ -2510,9 +2511,18 @@ async function fetchData() {
   const err=document.getElementById('err-banner');
   err.style.display='none';
   try {
-    const bust='?bust='+Date.now();
-    const [r1,r2]=await Promise.all([fetch(DATA_URL+bust),fetch(OI_URL+bust)]);
-    if (!r1.ok) throw new Error('Intraday fetch failed: '+r1.status);
+    // Bucket the cache-buster to a coarse window (10s) instead of a unique
+    // timestamp per request. A unique bust= on every call defeats
+    // raw.githubusercontent.com's CDN cache entirely — every single poll,
+    // from every open tab/user, becomes an uncached origin hit, which is
+    // what was triggering the 429s. Bucketing lets same-window requests
+    // share a cached response while still refreshing on a real cadence.
+    const bust='?bust='+(Math.floor(Date.now()/10000)*10000);
+    const [r1,r2]=await Promise.all([
+      fetchWithRetry429(DATA_URL+bust),
+      fetchWithRetry429(OI_URL+bust)
+    ]);
+    if (!r1.ok) throw new Error('Intraday fetch failed: '+r1.status+(r1.status===429?' (rate-limited by data host)':''));
     const text=await r1.text();
     liveData=parseIntraday(text);
     intradayUpdatedAt = new Date();
@@ -2522,14 +2532,28 @@ async function fetchData() {
       oiData=parseIntraday(oit);
       oiUpdatedAt = new Date();
 
-      // Lock OI min-IV for the day on the very first successful OI fetch
+      // Lock OI IV for the day on the very first successful OI fetch (used as
+      // a fallback when the git-history lookup above hasn't landed yet). Same
+      // rule: prefer the IV nearest Mean (μ); fall back to global min-IV if
+      // Mean isn't fetched yet.
       if (oiIvOpen === null && oiData.rows && oiData.rows.length) {
         const oiVolRows = oiData.rows.filter(r => r.vol != null && r.vol > 0);
         if (oiVolRows.length) {
-          const minIv = Math.min(...oiVolRows.map(r => r.vol));
+          const meanNow = liveMeanOrNull();
+          const near = meanNow != null ? ivNearPrice(oiVolRows, meanNow) : null;
+          let minIv, strikeInfo, usedFallback;
+          if (near) {
+            minIv = near.iv; strikeInfo = near; usedFallback = false;
+          } else {
+            const minRow = oiVolRows.reduce((a, b) => (b.vol < a.vol ? b : a));
+            minIv = minRow.vol; strikeInfo = { strikeLo: minRow.strike, strikeHi: minRow.strike }; usedFallback = true;
+          }
+          const oiDte = (oiData.dte != null && oiData.dte !== '—' && !isNaN(parseFloat(oiData.dte))) ? parseFloat(oiData.dte) : null;
           oiIvOpen = minIv;
-          saveOiIvOpen(minIv);
+          oiIvOpenMeta = { timestamp: oiUpdatedAt.toISOString(), strikeInfo, dte: oiDte, usedFallback };
+          saveOiIvOpen(minIv, oiIvOpenMeta);
           document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
+          setOiIvOpenStatus(minIv, oiUpdatedAt.toISOString(), strikeInfo, oiDte, usedFallback);
           syncGArrowAutoField();
         }
       }
@@ -2772,27 +2796,106 @@ const OI_IV_OPEN_KEY    = 'gcf_oi_iv_open_v1';
 const OI_REPO      = 'pageth/Vol2VolData';
 const OI_FILE_PATH = 'OIData.txt';
 
-// In-memory: the locked OI min-IV for today (set on first OI fetch of the day)
-let oiIvOpen = null;  // decimal form e.g. 0.123
+// In-memory: the locked OI IV for today (set on first OI fetch of the day)
+let oiIvOpen = null;      // decimal form e.g. 0.123
+let oiIvOpenMeta = null;  // { timestamp, strikeInfo, dte, usedFallback } for whichever fetch set oiIvOpen
+
+// state.mean starts at a hardcoded placeholder (4500) until GC=F actually
+// resolves (from cache or live). Only trust it once applyGoldPrice has run —
+// that's the only place that flips inp-mean's dataset.auto to 'gold'.
+function liveMeanOrNull() {
+  const meanInp = document.getElementById('inp-mean');
+  if (meanInp && meanInp.dataset.auto === 'gold' && state.mean > 0) return state.mean;
+  return null;
+}
+
+// Interpolate the IV smile at a given price — same linear interpolation used
+// for the live future-price σ elsewhere — so "IV at 1DTE" reflects the vol
+// nearest Mean (μ) rather than an arbitrary strike. Returns null, or
+// { iv, strikeLo, strikeHi } where strikeLo/strikeHi are the bracketing
+// strikes actually used (equal to each other on an exact/clamped match).
+function ivNearPrice(rows, price) {
+  if (!(price > 0) || !rows.length) return null;
+  const sorted = rows.slice().sort((a, b) => a.strike - b.strike);
+  const below = sorted.filter(r => r.strike <= price).slice(-1)[0];
+  const above = sorted.filter(r => r.strike >= price)[0];
+  if (below && above) {
+    const t = below.strike === above.strike ? 0 : (price - below.strike) / (above.strike - below.strike);
+    return { iv: below.vol + t * (above.vol - below.vol), strikeLo: below.strike, strikeHi: above.strike };
+  }
+  const edge = below || above;
+  return edge ? { iv: edge.vol, strikeLo: edge.strike, strikeHi: edge.strike } : null;
+}
+
+function formatBkk(timestampIso) {
+  if (!timestampIso) return '—';
+  const d = new Date(timestampIso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Bangkok', hour12: false,
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' BKK';
+}
+
+// Update the "IV@1DTE" line in hdr-right with the vol%, timestamp, strike(s),
+// and DTE used — plus an optional trailing note (e.g. "Live check failed:
+// raw HTTP 429"), kept visually separate (" | ") from the value's own
+// provenance so a failure reason never gets mashed into a row of dashes.
+function setOiIvOpenStatus(ivDecimal, timestampIso, strikeInfo, dte, usedFallback, note) {
+  const el = document.getElementById('status-oi-iv-open');
+  if (!el) return;
+  const ivTxt = (ivDecimal > 0) ? (ivDecimal * 100).toFixed(2) + '%' : '—';
+  let base;
+  if (timestampIso) {
+    const strikeTxt = !strikeInfo ? '—'
+      : strikeInfo.strikeLo === strikeInfo.strikeHi ? String(strikeInfo.strikeLo)
+      : strikeInfo.strikeLo + '–' + strikeInfo.strikeHi;
+    const dteTxt = (dte != null && !isNaN(dte)) ? dte : '—';
+    base = 'IV@1DTE: ' + ivTxt + ' @ ' + formatBkk(timestampIso)
+      + ' · strike ' + strikeTxt + ' · DTE ' + dteTxt
+      + (usedFallback ? ' (fallback)' : '');
+  } else {
+    // We have a number but no snapshot details for it — most likely a cache
+    // entry written before timestamp/strike/DTE were tracked (or before
+    // today's very first successful lookup ever completed). Say that
+    // plainly instead of printing "@ — · strike — · DTE —".
+    base = 'IV@1DTE: ' + ivTxt + ' (cached — no snapshot details saved for this value)';
+  }
+  el.textContent = base + (note ? '  |  ' + note : '');
+}
+
+// For states where there's no metadata to show at all yet (nothing cached,
+// nothing fetched) — keeps the header line saying *something* instead of
+// sitting on the startup placeholder indefinitely with no explanation.
+function setOiIvOpenStatusText(text) {
+  const el = document.getElementById('status-oi-iv-open');
+  if (el) el.textContent = text;
+}
 
 function loadOiIvOpen() {
   try {
     const raw = localStorage.getItem(OI_IV_OPEN_KEY);
     if (!raw) return;
-    const { date, minIv } = JSON.parse(raw);
+    const { date, minIv, timestamp, strikeInfo, dte, usedFallback } = JSON.parse(raw);
     const today = new Date().toISOString().slice(0, 10);
     if (date === today && minIv > 0) {
       oiIvOpen = minIv;
+      oiIvOpenMeta = { timestamp: timestamp || null, strikeInfo: strikeInfo || null, dte: dte ?? null, usedFallback: !!usedFallback };
       document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
+      setOiIvOpenStatus(minIv, oiIvOpenMeta.timestamp, oiIvOpenMeta.strikeInfo, oiIvOpenMeta.dte, oiIvOpenMeta.usedFallback, 'cached — resolving exact snapshot…');
       syncGArrowAutoField();
     }
   } catch(e) {}
 }
 
-function saveOiIvOpen(minIv) {
+function saveOiIvOpen(minIv, meta) {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    localStorage.setItem(OI_IV_OPEN_KEY, JSON.stringify({ date: today, minIv }));
+    localStorage.setItem(OI_IV_OPEN_KEY, JSON.stringify({
+      date: today, minIv,
+      timestamp: meta?.timestamp ?? null,
+      strikeInfo: meta?.strikeInfo ?? null,
+      dte: meta?.dte ?? null,
+      usedFallback: !!meta?.usedFallback
+    }));
   } catch(e) {}
 }
 
@@ -2801,36 +2904,46 @@ function saveOiIvOpen(minIv) {
 // — i.e. its own "today" already rolled over 7 hours before UTC midnight).
 // Using UTC midnight as the day boundary excluded that commit entirely, so
 // we compute the boundary in the source's timezone instead.
+//
+// "IV at 1DTE" is fixed to the 5am Bangkok-time snapshot (not midnight BKK) —
+// this lines it up with the source's actual daily-roll/open cadence. We walk
+// commits since that anchor and take the earliest one at/after it.
 const OI_SOURCE_UTC_OFFSET_HOURS = 7;
-function utcPlus7DayStartIso() {
+const OI_ANCHOR_HOUR_BKK          = 5; // 05:00 Asia/Bangkok
+function bkkAnchorIso() {
   const now = new Date();
   const shiftedMs = now.getTime() + OI_SOURCE_UTC_OFFSET_HOURS * 3600 * 1000;
   const shifted = new Date(shiftedMs); // UTC getters on this now read as UTC+7 wall-clock
   const y = shifted.getUTCFullYear(), m = shifted.getUTCMonth(), d = shifted.getUTCDate();
-  const localMidnightAsUtcMs = Date.UTC(y, m, d, 0, 0, 0);
-  const trueUtcMs = localMidnightAsUtcMs - OI_SOURCE_UTC_OFFSET_HOURS * 3600 * 1000;
-  return new Date(trueUtcMs).toISOString();
+  let anchorUtcMs = Date.UTC(y, m, d, OI_ANCHOR_HOUR_BKK, 0, 0) - OI_SOURCE_UTC_OFFSET_HOURS * 3600 * 1000;
+  // If today's 5am-BKK moment hasn't happened yet, anchor to yesterday's instead
+  // so we always resolve against the most recent past 5am-BKK boundary.
+  if (anchorUtcMs > now.getTime()) anchorUtcMs -= 24 * 3600 * 1000;
+  return new Date(anchorUtcMs).toISOString();
 }
 
-// Look up the earliest commit today that touched OIData.txt, fetch that
-// exact historical snapshot, and compute the min-IV from it. This is what
-// "first OI fetch of the day" should really mean — the file's true first
-// state of the day, not whichever moment a given browser first loaded.
+// Find the OIData.txt commit closest to 5am Bangkok time, from either side —
+// not just the earliest commit *after* 5am. If the source doesn't publish
+// again until well after 5am, but did commit not long before it, the
+// pre-5am commit can be the closer (and more representative) snapshot.
 //
 // IMPORTANT: the commits API returns newest-first, capped at 100 per page.
 // If the file is committed more than 100x/day, the true earliest commit
-// falls off page 1 — so we must paginate until we hit a short/empty page
-// (the actual end of today's history) rather than trusting page 1 alone.
+// after the anchor falls off page 1 — so we paginate until a short/empty
+// page (the actual end of the "since" range) rather than trusting page 1.
 async function fetchFirstOiOfDay() {
   const statEl = document.getElementById('val-oi-iv-open');
   try {
-    const sinceIso = utcPlus7DayStartIso();
+    const anchorIso = bkkAnchorIso();
+    const anchorMs = new Date(anchorIso).getTime();
     const MAX_PAGES = 20; // safety cap: 20 * 100 = 2000 commits/day
+
+    // Candidate A: earliest commit at/after the anchor (paginate to the end
+    // of the "since" range, since GitHub returns newest-first per page).
     let page = 1;
     let lastFullOrPartialPage = null;
-
     while (page <= MAX_PAGES) {
-      const commitsUrl = `https://api.github.com/repos/${OI_REPO}/commits?path=${encodeURIComponent(OI_FILE_PATH)}&since=${sinceIso}&per_page=100&page=${page}`;
+      const commitsUrl = `https://api.github.com/repos/${OI_REPO}/commits?path=${encodeURIComponent(OI_FILE_PATH)}&since=${anchorIso}&per_page=100&page=${page}`;
       const cRes = await fetchWithTimeout(commitsUrl, 8000);
       if (!cRes.ok) {
         if (cRes.status === 403 || cRes.status === 429) throw new Error('GitHub API rate-limited (' + cRes.status + ')');
@@ -2842,14 +2955,30 @@ async function fetchFirstOiOfDay() {
       if (commits.length < 100) break; // short page = reached the oldest commits in range
       page++;
     }
+    const afterCommit = lastFullOrPartialPage && lastFullOrPartialPage.length
+      ? lastFullOrPartialPage[lastFullOrPartialPage.length - 1]
+      : null;
 
-    if (!lastFullOrPartialPage || !lastFullOrPartialPage.length) {
-      if (statEl) statEl.title = '[oi-open] no commits found for today (since ' + sinceIso + ')';
-      return null;
+    // Candidate B: the single most recent commit strictly before the anchor.
+    let beforeCommit = null;
+    try {
+      const beforeUrl = `https://api.github.com/repos/${OI_REPO}/commits?path=${encodeURIComponent(OI_FILE_PATH)}&until=${anchorIso}&per_page=1`;
+      const bRes = await fetchWithTimeout(beforeUrl, 8000);
+      if (bRes.ok) {
+        const bCommits = await bRes.json();
+        if (Array.isArray(bCommits) && bCommits.length) beforeCommit = bCommits[0];
+      }
+    } catch(e) { /* non-fatal — just means we only have the "after" candidate */ }
+
+    // Pick whichever candidate's commit time is closer to the anchor.
+    const distTo = (c) => c ? Math.abs(new Date(c.commit?.author?.date).getTime() - anchorMs) : Infinity;
+    const earliest = distTo(beforeCommit) < distTo(afterCommit) ? beforeCommit : afterCommit;
+
+    if (!earliest) {
+      const msg = 'no commits found near 5am BKK';
+      if (statEl) statEl.title = '[oi-open] ' + msg + ' (anchor ' + anchorIso + ')';
+      return { error: msg };
     }
-
-    // Oldest commit in the final page = earliest commit of the day
-    const earliest = lastFullOrPartialPage[lastFullOrPartialPage.length - 1];
     const sha = earliest.sha;
 
     const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
@@ -2859,16 +2988,38 @@ async function fetchFirstOiOfDay() {
     const parsed = parseIntraday(text);
     const volRows = (parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
     if (!volRows.length) {
-      if (statEl) statEl.title = '[oi-open] earliest commit ' + sha.slice(0,7) + ' had no usable IV rows';
-      return null;
+      const msg = 'commit ' + sha.slice(0,7) + ' had no usable IV rows';
+      if (statEl) statEl.title = '[oi-open] closest-to-5am ' + msg;
+      return { error: msg };
     }
-    const minIv = Math.min(...volRows.map(r => r.vol));
-    if (statEl) statEl.title = '[oi-open] from commit ' + sha.slice(0,7) + ' · ' + (earliest.commit?.author?.date || '');
-    return { minIv, sha };
+
+    const mean = liveMeanOrNull();
+    const near = mean != null ? ivNearPrice(volRows, mean) : null;
+    let minIv, strikeInfo, usedFallback;
+    if (near) {
+      minIv = near.iv; strikeInfo = near; usedFallback = false;
+    } else {
+      // Mean (μ) isn't fetched/available yet — fall back to the prior
+      // behavior (global min-IV across strikes) rather than block on it.
+      const minRow = volRows.reduce((a, b) => (b.vol < a.vol ? b : a));
+      minIv = minRow.vol; strikeInfo = { strikeLo: minRow.strike, strikeHi: minRow.strike }; usedFallback = true;
+    }
+
+    // OIData.txt carries its own DTE in the title (same field IntradayData.txt
+    // uses) — surface the real number rather than assuming exactly 1.0.
+    const dte = (parsed.dte != null && parsed.dte !== '—' && !isNaN(parseFloat(parsed.dte))) ? parseFloat(parsed.dte) : null;
+
+    const commitTimestamp = earliest.commit?.author?.date || null;
+    if (statEl) {
+      statEl.title = usedFallback
+        ? '[oi-open] Mean (μ) unavailable — fallback min-IV · closest to 5am BKK, commit ' + sha.slice(0,7) + ' · DTE ' + (dte ?? '—') + ' · ' + (commitTimestamp || '')
+        : '[oi-open] IV @ μ=' + mean + ' · closest to 5am BKK, commit ' + sha.slice(0,7) + ' · DTE ' + (dte ?? '—') + ' · ' + (commitTimestamp || '');
+    }
+    return { minIv, sha, usedFallback, strikeInfo, timestamp: commitTimestamp, dte };
   } catch(e) {
     console.warn('[oi-open] fetchFirstOiOfDay failed:', e.message);
     if (statEl) statEl.title = '[oi-open] lookup failed: ' + e.message + ' — showing fallback value';
-    return null;
+    return { error: e.message };
   }
 }
 
@@ -2881,10 +3032,27 @@ async function initOiIvOpen() {
   const result = await fetchFirstOiOfDay();
   if (result && result.minIv > 0) {
     oiIvOpen = result.minIv;
-    saveOiIvOpen(result.minIv);
+    oiIvOpenMeta = { timestamp: result.timestamp, strikeInfo: result.strikeInfo, dte: result.dte, usedFallback: result.usedFallback };
+    saveOiIvOpen(result.minIv, oiIvOpenMeta);
     document.getElementById('val-oi-iv-open').textContent = (result.minIv * 100).toFixed(2) + '%';
+    setOiIvOpenStatus(result.minIv, result.timestamp, result.strikeInfo, result.dte, result.usedFallback);
     syncGArrowAutoField();
     render();
+  } else {
+    // Lookup failed or found nothing — say so instead of leaving the header
+    // on its startup placeholder, and keep showing whichever vol/timestamp/
+    // strike/DTE we do have (from cache) rather than hiding them.
+    // fetchData()'s first-fetch lock (if it hasn't already run via cache) is
+    // still the fallback for the actual IV number.
+    const reason = result && result.error ? result.error : 'unavailable';
+    if (oiIvOpen !== null && oiIvOpenMeta) {
+      const note = oiIvOpenMeta.timestamp
+        ? 'cached — live check failed: ' + reason
+        : 'live check failed: ' + reason;
+      setOiIvOpenStatus(oiIvOpen, oiIvOpenMeta.timestamp, oiIvOpenMeta.strikeInfo, oiIvOpenMeta.dte, oiIvOpenMeta.usedFallback, note);
+    } else {
+      setOiIvOpenStatusText('IV@1DTE: lookup failed (' + reason + ')');
+    }
   }
 }
 
@@ -3532,6 +3700,23 @@ function fetchWithTimeout(url, timeoutMs = 5000) {
     .finally(() => clearTimeout(tid));
 }
 
+// Retry once/twice on 429 with backoff (honoring Retry-After if the host
+// sends one) before giving up — smooths over transient rate-limit blips
+// within a single poll instead of surfacing them as a hard fetch error.
+async function fetchWithRetry429(url, { maxRetries = 2, timeoutMs = 8000 } = {}) {
+  let attempt = 0;
+  let res = await fetchWithTimeout(url, timeoutMs);
+  while (res.status === 429 && attempt < maxRetries) {
+    const retryAfterHeader = res.headers.get('Retry-After');
+    const retryAfterMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : NaN;
+    const backoffMs = !isNaN(retryAfterMs) ? retryAfterMs : 600 * Math.pow(2, attempt);
+    await new Promise(r => setTimeout(r, backoffMs));
+    attempt++;
+    res = await fetchWithTimeout(url, timeoutMs);
+  }
+  return res;
+}
+
 // Pull open/prevClose out of a Yahoo v8/chart JSON result
 function extractPrices(data) {
   const result = data?.chart?.result?.[0];
@@ -4013,6 +4198,9 @@ async function loadHistoryFromDb(retriesLeft = 10) {
   BOOT
 ================================================================ */
 initGaugeBands();
+loadGoldCache();    // seed Mean (μ) from cache synchronously first, if any —
+                    // so the IV-at-1DTE lookup below has a real mean to match
+                    // against as early as possible (live price refines it after)
 initOiIvOpen();     // resolve today's true first OI IV from git history (falls back to first-fetch lock)
 loadHistory();      // restore today's session history (localStorage fallback)
 loadHistoryFromApi(); // backfill from local api.py server, if running (dev/localhost only)
