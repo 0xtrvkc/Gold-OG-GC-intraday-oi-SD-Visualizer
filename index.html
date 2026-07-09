@@ -10,7 +10,7 @@
   --bg0: #f8f4ee;
   --bg1: #f2ede5;
   --bg2: #ebe4d8;
-  --bg3: #e2d9cb;
+  --bg3: #e2d9cb;z
   --line: #d8cfc0;
   --line2: #c8bfb0;
   --fg0: #1a1714;
@@ -1046,6 +1046,7 @@ svg.hist-svg {
         <button class="btn" id="btn-theme" onclick="toggleTheme()" title="Toggle light/dark">◑</button>
       </div>
       <div class="countdown" id="countdown">Next refresh in —</div>
+      <div id="fetch-alert" style="font-size:10px;font-family:var(--mono);letter-spacing:0.04em;line-height:1.4;color:var(--fg3);text-align:right;max-width:260px;">Waiting for first fetch…</div>
       <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end;">
         <a href="https://0xtrvkc.github.io/itd-oi-db/" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: block;">
   <div id="status-intraday" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;line-height:1.4;">
@@ -2505,8 +2506,10 @@ function _render() {
 async function fetchData() {
   const pulse=document.getElementById('pulse-dot');
   const statusTxt=document.getElementById('status-txt');
+  const alertEl=document.getElementById('fetch-alert');
   pulse.classList.remove('stale');
   statusTxt.textContent='Fetching…';
+  if (alertEl) { alertEl.textContent='⏳ Fetching…'; alertEl.style.color='var(--fg3)'; }
   const err=document.getElementById('err-banner');
   err.style.display='none';
   try {
@@ -2537,6 +2540,10 @@ async function fetchData() {
 
     const now=new Date();
     statusTxt.textContent='Updated '+now.toLocaleTimeString();
+    if (alertEl) {
+      alertEl.textContent='✓ Fetch OK · '+now.toLocaleTimeString();
+      alertEl.style.color='var(--oi-call)';
+    }
     // Update title
     if (liveData.title) document.getElementById('h-title').textContent=liveData.title.includes('SD')?liveData.title:'SD Visualizer — '+liveData.title;
     // Compute SD from IV interpolated at the future price + DTE
@@ -2601,6 +2608,10 @@ async function fetchData() {
     err.textContent='⚠ Error fetching data: '+e.message;
     pulse.classList.add('stale');
     statusTxt.textContent='Fetch failed';
+    if (alertEl) {
+      alertEl.textContent='⚠ Fetch failed: '+e.message;
+      alertEl.style.color='var(--danger)';
+    }
     const sdot=document.getElementById('sdg-dot');
     if (sdot) sdot.classList.add('stale');
   }
@@ -2812,22 +2823,35 @@ function utcPlus7DayStartIso() {
   return new Date(trueUtcMs).toISOString();
 }
 
-// Look up the earliest commit today that touched OIData.txt, fetch that
-// exact historical snapshot, and compute the min-IV from it. This is what
-// "first OI fetch of the day" should really mean — the file's true first
-// state of the day, not whichever moment a given browser first loaded.
+// Look up today's commits to OIData.txt, then scan forward chronologically
+// to find the specific snapshot where the file's own DTE reads 0.99 — a
+// fixed, repeatable reference point every day, rather than just grabbing
+// the earliest commit of the day (which could land on any DTE depending on
+// exactly when the collector's window happened to start). Falls back to
+// the earliest commit only if no 0.99 DTE snapshot is found in the scan.
 //
 // IMPORTANT: the commits API returns newest-first, capped at 100 per page.
-// If the file is committed more than 100x/day, the true earliest commit
-// falls off page 1 — so we must paginate until we hit a short/empty page
-// (the actual end of today's history) rather than trusting page 1 alone.
+// If the file is committed more than 100x/day, older commits fall off
+// page 1 — so we paginate until a short/empty page (the actual end of
+// today's history) rather than trusting page 1 alone.
+// TARGET_OI_OPEN_DTE: the file's own DTE decays continuously through the
+// day (it's a fraction-of-a-day countdown to expiry), so the very first
+// commit of the day can land on almost any DTE value depending on exactly
+// when the collector's window started — not necessarily anything close to
+// "1 day out." Rather than trust whichever DTE the earliest commit happens
+// to show, we scan forward through the day's commits looking for the
+// specific snapshot where DTE reads 0.99 — a consistent, repeatable
+// reference point every day instead of a moving target.
+const TARGET_OI_OPEN_DTE = 0.99;
+const TARGET_OI_OPEN_DTE_TOL = 0.005; // match window around the target (handles rounding in the source file)
+
 async function fetchFirstOiOfDay() {
   const statEl = document.getElementById('val-oi-iv-open');
   try {
     const sinceIso = utcPlus7DayStartIso();
     const MAX_PAGES = 20; // safety cap: 20 * 100 = 2000 commits/day
     let page = 1;
-    let lastFullOrPartialPage = null;
+    let allCommits = []; // accumulated across pages, newest→oldest per GitHub's default order
 
     while (page <= MAX_PAGES) {
       const commitsUrl = `https://api.github.com/repos/${OI_REPO}/commits?path=${encodeURIComponent(OI_FILE_PATH)}&since=${sinceIso}&per_page=100&page=${page}`;
@@ -2838,33 +2862,67 @@ async function fetchFirstOiOfDay() {
       }
       const commits = await cRes.json();
       if (!Array.isArray(commits) || !commits.length) break; // no more commits — done paging
-      lastFullOrPartialPage = commits;
+      allCommits = allCommits.concat(commits);
       if (commits.length < 100) break; // short page = reached the oldest commits in range
       page++;
     }
 
-    if (!lastFullOrPartialPage || !lastFullOrPartialPage.length) {
+    if (!allCommits.length) {
       if (statEl) statEl.title = '[oi-open] no commits found for today (since ' + sinceIso + ')';
       return null;
     }
 
-    // Oldest commit in the final page = earliest commit of the day
-    const earliest = lastFullOrPartialPage[lastFullOrPartialPage.length - 1];
-    const sha = earliest.sha;
+    // GitHub returns newest-first within a page, and each subsequent page is
+    // progressively older — so the concatenated list is newest→oldest overall.
+    // Reverse it to scan chronologically, oldest → newest, through the day.
+    const chronological = allCommits.slice().reverse();
 
-    const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
-    const rRes = await fetchWithTimeout(rawUrl, 8000);
-    if (!rRes.ok) throw new Error('raw HTTP ' + rRes.status);
-    const text = await rRes.text();
-    const parsed = parseIntraday(text);
-    const volRows = (parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
+    const SCAN_CAP = 150; // safety cap on raw-content fetches for the DTE scan
+
+    let matched = null;
+    for (let i = 0; i < chronological.length && i < SCAN_CAP; i++) {
+      const commit = chronological[i];
+      const sha = commit.sha;
+      const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
+      const rRes = await fetchWithTimeout(rawUrl, 8000);
+      if (!rRes.ok) continue; // unreadable snapshot — skip and keep scanning
+      const text = await rRes.text();
+      const parsed = parseIntraday(text);
+      const dteNum = parseFloat(parsed.dte);
+      if (!isNaN(dteNum) && Math.abs(dteNum - TARGET_OI_OPEN_DTE) < TARGET_OI_OPEN_DTE_TOL) {
+        matched = { commit, sha, parsed };
+        break;
+      }
+    }
+
+    if (!matched) {
+      // No 0.99 DTE snapshot found in the scanned window — fall back to the
+      // very first commit of the day so the field never stays blank.
+      const earliest = chronological[0];
+      const sha = earliest.sha;
+      const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
+      const rRes = await fetchWithTimeout(rawUrl, 8000);
+      if (!rRes.ok) throw new Error('raw HTTP ' + rRes.status);
+      const text = await rRes.text();
+      const parsed = parseIntraday(text);
+      const volRows = (parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
+      if (!volRows.length) {
+        if (statEl) statEl.title = '[oi-open] no 0.99 DTE snapshot found, and earliest commit ' + sha.slice(0,7) + ' had no usable IV rows';
+        return null;
+      }
+      const minIv = Math.min(...volRows.map(r => r.vol));
+      if (statEl) statEl.title = '[oi-open] no 0.99 DTE snapshot found within scan — fell back to earliest commit ' + sha.slice(0,7) + ' (DTE ' + parsed.dte + ') · ' + (earliest.commit?.author?.date || '');
+      return { minIv, sha };
+    }
+
+    const volRows = (matched.parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
     if (!volRows.length) {
-      if (statEl) statEl.title = '[oi-open] earliest commit ' + sha.slice(0,7) + ' had no usable IV rows';
+      if (statEl) statEl.title = '[oi-open] 0.99 DTE commit ' + matched.sha.slice(0,7) + ' had no usable IV rows';
       return null;
     }
     const minIv = Math.min(...volRows.map(r => r.vol));
-    if (statEl) statEl.title = '[oi-open] from commit ' + sha.slice(0,7) + ' · ' + (earliest.commit?.author?.date || '');
-    return { minIv, sha };
+    if (statEl) statEl.title = '[oi-open] 0.99 DTE snapshot from commit ' + matched.sha.slice(0,7) + ' · ' + (matched.commit.commit?.author?.date || '');
+    return { minIv, sha: matched.sha };
   } catch(e) {
     console.warn('[oi-open] fetchFirstOiOfDay failed:', e.message);
     if (statEl) statEl.title = '[oi-open] lookup failed: ' + e.message + ' — showing fallback value';
