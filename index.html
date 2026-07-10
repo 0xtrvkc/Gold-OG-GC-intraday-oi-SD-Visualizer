@@ -1037,6 +1037,7 @@ svg.hist-svg {
       <div class="hdr-eyebrow">Gold Futures · GC · Intraday</div>
       <h1 id="h-title">Standard Deviation Visualizer</h1>
       <p class="hdr-sub" id="h-sub">Normal distribution &nbsp;·&nbsp; ±3σ zones &nbsp;·&nbsp; Intraday volume &amp; OI overlay</p>
+      <div id="data-cache-badge" style="display:none;font-size:10px;font-family:var(--mono);color:var(--danger);letter-spacing:0.04em;margin-top:4px;"></div>
     </div>
     <div class="hdr-right">
       <div class="status-row">
@@ -2539,11 +2540,17 @@ async function fetchData() {
     const text=await r1.text();
     liveData=parseIntraday(text);
     intradayUpdatedAt = new Date();
+    saveDataCache(LIVE_DATA_CACHE_KEY, liveData);
+    // A genuinely live fetch just succeeded — drop the "showing cached
+    // data" warning if it was up from an earlier failure/cold boot.
+    liveDataIsCached = false;
+    updateDataCacheBadge();
 
     if (r2.ok) {
       const oit=await r2.text();
       oiData=parseIntraday(oit);
       oiUpdatedAt = new Date();
+      saveDataCache(OI_DATA_CACHE_KEY, oiData);
 
       // Lowest-confidence fallback for OI min-IV: if nothing has locked in a
       // value yet at all (no cached state, no exact/earliest-commit result
@@ -2641,6 +2648,25 @@ async function fetchData() {
     // the effective interval (capped) so the app automatically backs off;
     // it recovers to normal speed the moment a fetch succeeds again above.
     refreshBackoffMultiplier = Math.min(REFRESH_BACKOFF_MAX, refreshBackoffMultiplier * 2);
+
+    // Last-known-good fallback: only kicks in if nothing has ever loaded
+    // successfully in this session (liveData still null) — e.g. a page
+    // reload during an outage. A transient failure mid-session already just
+    // leaves the last live in-memory data on screen without needing this;
+    // this path exists specifically for the "memory was wiped, disk wasn't"
+    // case.
+    if (liveData === null) {
+      const cachedLive = loadDataCache(LIVE_DATA_CACHE_KEY);
+      if (cachedLive) {
+        liveData = cachedLive.data;
+        liveDataIsCached = true;
+        liveDataCacheTs = cachedLive.ts;
+        const cachedOi = loadDataCache(OI_DATA_CACHE_KEY);
+        if (cachedOi) oiData = cachedOi.data;
+        updateDataCacheBadge();
+        render();
+      }
+    }
     const sdot=document.getElementById('sdg-dot');
     if (sdot) sdot.classList.add('stale');
   }
@@ -3917,6 +3943,78 @@ function saveGoldCache(todayOpen, prevClose) {
   } catch(e) {}
 }
 
+/* ================================================================
+  GENERIC LAST-KNOWN-GOOD DATA CACHE
+  Same {data, ts} + try/catch pattern as the gold-price cache above,
+  generalized so liveData/oiData/macro can each reuse it instead of three
+  near-identical copies. Only ever called with a *successful* fetch result —
+  never caches an error state — so a later cache hit is always something
+  that was genuinely live at some point, just possibly stale now.
+================================================================ */
+function saveDataCache(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
+}
+function loadDataCache(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.data == null || !parsed.ts) return null;
+    return parsed; // { data, ts }
+  } catch(e) { return null; }
+}
+function cacheAgeLabel(ts) {
+  const ageMin = (Date.now() - ts) / 60000;
+  if (ageMin < 1) return 'just now';
+  if (ageMin < 60) return Math.round(ageMin) + ' min ago';
+  const ageH = ageMin / 60;
+  return ageH < 24 ? ageH.toFixed(1) + ' h ago' : Math.floor(ageH / 24) + ' d ago';
+}
+
+const LIVE_DATA_CACHE_KEY = 'gcf_live_data_cache_v1';
+const OI_DATA_CACHE_KEY   = 'gcf_oi_data_cache_v1';
+const MACRO_CACHE_KEY     = 'gcf_macro_cache_v1';
+
+// Whether the chart is currently showing localStorage-cached data instead
+// of a genuinely live fetch result — drives the visible warning badge so
+// cached data is never mistaken for live data.
+let liveDataIsCached = false;
+let liveDataCacheTs  = null;
+let macroRenderedOnce = false; // true once any macro content (live or cached) has been shown
+
+function updateDataCacheBadge() {
+  const el = document.getElementById('data-cache-badge');
+  if (!el) return;
+  if (liveDataIsCached && liveDataCacheTs) {
+    el.style.display = 'block';
+    el.textContent = '⚠ Showing cached chart data from ' + cacheAgeLabel(liveDataCacheTs) + ' — live fetch unavailable';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// Paints whatever was cached from a previous successful load — for
+// liveData/oiData/macro — immediately at boot, so the page shows the last
+// known-good state instead of a blank chart while the first live fetch is
+// still in flight (or if it fails outright, e.g. offline / rate-limited).
+// Anything genuinely live that arrives afterward simply overwrites this.
+function loadDataCachesAtBoot() {
+  const cachedLive = loadDataCache(LIVE_DATA_CACHE_KEY);
+  if (cachedLive) {
+    liveData = cachedLive.data;
+    liveDataIsCached = true;
+    liveDataCacheTs = cachedLive.ts;
+  }
+  const cachedOi = loadDataCache(OI_DATA_CACHE_KEY);
+  if (cachedOi) oiData = cachedOi.data;
+
+  const cachedMacro = loadDataCache(MACRO_CACHE_KEY);
+  if (cachedMacro) renderMacroData(cachedMacro.data, true);
+
+  updateDataCacheBadge();
+  if (cachedLive || cachedOi) render();
+}
+
 async function fetchGoldPrice() {
   const meanInp = document.getElementById('inp-mean');
   if (meanInp.value !== '' && meanInp.dataset.auto !== '1' && meanInp.dataset.auto !== 'gold') return;
@@ -3984,150 +4082,169 @@ async function fetchGoldPrice() {
 ================================================================ */
 const MACRO_URL = 'https://raw.githubusercontent.com/0xtrvkc/BTC-Daily-Short-Call-Premium-Income-Checklist/main/data/macro.json';
 
+// Renders a parsed macro-events JSON payload into the DOM. Pulled out of
+// fetchMacro() so the exact same rendering logic can be reused for a
+// localStorage-cached payload — at boot (loadDataCachesAtBoot) and as a
+// fallback if a live fetch fails (fetchMacro's catch below) — without
+// duplicating the whole event-list/timezone-conversion block.
+function renderMacroData(data, isCached, ts) {
+  macroRenderedOnce = true;
+
+  const badge = document.getElementById('macro-skip-badge');
+  const meta  = document.getElementById('macro-meta');
+  const body  = document.getElementById('macro-events-body');
+
+  // Badge: skip=true → events present, trade with caution; skip=false → clear
+  const skip = data.skip === true;
+  badge.textContent = skip ? '⚠ Caution' : '✓ Clear';
+  badge.className   = 'macro-skip-badge ' + (skip ? 'danger' : 'ok');
+
+  // Meta: date · N events (· cached note appended when showing stale data)
+  const dateStr = data.date || '';
+  const count   = data.event_count != null ? data.event_count
+                  : (data.events ? data.events.length : 0);
+  meta.textContent = dateStr + (count ? '  ·  ' + count + ' event' + (count !== 1 ? 's' : '') : '');
+  if (isCached) meta.textContent += '  ·  ⚠ cached' + (ts ? ' (' + cacheAgeLabel(ts) + ')' : '');
+
+  // Events list
+  if (!data.events || data.events.length === 0) {
+    body.innerHTML = '<div class="macro-empty">No high-impact events today — trade freely.</div>';
+    return;
+  }
+
+  // Convert the feed's time string (e.g. "8:00am") → Bangkok time (UTC+7).
+  //
+  // NOTE ON THE "ET" LABEL: the tooltip/field calls this "ET" (Eastern),
+  // but empirically it is NOT Eastern Time. Verified 2026-07-02: raw
+  // value 5:30am needed to land on 7:30pm BKK (confirmed against
+  // forexfactory.com directly for the same event) — a +14h gap. Bangkok
+  // is fixed UTC+7 with no DST, so a +14h gap means the source clock is
+  // running at UTC-7, which in July is Pacific Daylight Time (PDT), not
+  // Eastern (EDT would be UTC-4, giving +11h — what we tried first, and
+  // it was still 3 hours off). Best guess: the upstream scraper's host
+  // is on Pacific system time and the "ET" label is simply wrong.
+  //
+  // Rather than hardcode "+14", which would only hold until PDT ends and
+  // the zone reverts to PST (UTC-8, i.e. +15h) around November, this
+  // computes the source zone's live UTC offset via Intl — same
+  // DST-proofing as a real Eastern-time feed would need, just pointed at
+  // America/Los_Angeles instead of America/New_York.
+  //
+  // If a future data refresh from the upstream repo turns out to be
+  // genuinely Eastern after all, flip SOURCE_TZ back to
+  // 'America/New_York' — everything else here is timezone-agnostic.
+  const SOURCE_TZ = 'America/Los_Angeles';
+
+  function getSourceUtcOffsetHours(onDate = new Date()) {
+    // Format the same instant in UTC and in SOURCE_TZ, then diff the
+    // wall-clock hours to get today's actual UTC offset. Intl carries
+    // the official IANA DST rules, so this self-corrects every DST
+    // transition — including future rule changes — with no manual upkeep.
+    const utcStr = onDate.toLocaleString('en-US', { timeZone: 'UTC', hour12: false,
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const srcStr = onDate.toLocaleString('en-US', { timeZone: SOURCE_TZ, hour12: false,
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const parse = s => {
+      const [d, t] = s.split(', ');
+      const [mo, da, yr] = d.split('/').map(Number);
+      const [hh, mi] = t.split(':').map(Number);
+      return Date.UTC(yr, mo - 1, da, hh === 24 ? 0 : hh, mi);
+    };
+    const diffMs = parse(srcStr) - parse(utcStr);
+    return Math.round(diffMs / 3600000); // e.g. -7 (PDT) or -8 (PST)
+  }
+
+  const BKK_UTC_OFFSET_HOURS = 7; // Bangkok has no DST — always UTC+7
+
+  function etToBkk(timeStr) {
+    if (!timeStr) return '—';
+    const m = timeStr.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
+    if (!m) return timeStr;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const ampm = m[3].toLowerCase();
+    if (ampm === 'pm' && h !== 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+
+    // Source → BKK offset, recomputed live from Intl's DST-aware TZ data
+    // (e.g. +14 h during PDT, +15 h during PST) instead of a hardcoded number.
+    const sourceToBkkHours = BKK_UTC_OFFSET_HOURS - getSourceUtcOffsetHours();
+    const totalMin = (((h * 60 + min + sourceToBkkHours * 60) % (24 * 60)) + 24 * 60) % (24 * 60);
+    const bkkH = Math.floor(totalMin / 60);
+    const bkkM = totalMin % 60;
+    const suffix = bkkH >= 12 ? 'pm' : 'am';
+    const h12 = bkkH % 12 || 12;
+    return `${h12}:${String(bkkM).padStart(2,'0')}${suffix}`;
+  }
+
+  const rows = data.events.map(ev => {
+    const impact = (ev.impact || '').toUpperCase();
+    const impactLabel = impact === 'HIGH' ? 'HIGH' : impact === 'MEDIUM' ? 'MED' : impact || '—';
+    const bkkTime = etToBkk(ev.time);
+    return `<div class="macro-event-row">` +
+      `<span class="macro-impact ${impact}">${impactLabel}</span>` +
+      `<span class="macro-time" title="ET: ${ev.time || '—'}">${bkkTime} <span style="font-size:9px;color:var(--fg3);letter-spacing:0">BKK</span></span>` +
+      `<span class="macro-currency">&nbsp;${ev.currency || ''}&nbsp;</span>` +
+      `<span class="macro-event-name">${ev.event || '—'}</span>` +
+      `</div>`;
+  }).join('');
+
+  body.innerHTML = `<div class="macro-events" id="macro-events-grid">${rows}</div>`;
+
+  // Mark last-row items so CSS can remove their bottom border
+  // Use ResizeObserver to re-evaluate whenever layout changes
+  function markLastRow() {
+    const grid = document.getElementById('macro-events-grid');
+    if (!grid) return;
+    const items = Array.from(grid.querySelectorAll('.macro-event-row'));
+    items.forEach(el => el.removeAttribute('data-last-row'));
+    if (!items.length) return;
+    // find the bottom offset of the last item
+    const lastBottom = items[items.length - 1].getBoundingClientRect().bottom;
+    items.forEach(el => {
+      if (Math.abs(el.getBoundingClientRect().bottom - lastBottom) < 2)
+        el.setAttribute('data-last-row', '');
+    });
+  }
+  // Run once after paint, then watch for layout shifts
+  requestAnimationFrame(() => {
+    markLastRow();
+    if (window._macroRO) window._macroRO.disconnect();
+    window._macroRO = new ResizeObserver(markLastRow);
+    const grid = document.getElementById('macro-events-grid');
+    if (grid) window._macroRO.observe(grid);
+  });
+
+  // Caution summary bar — reword raw JSON text to match app semantics
+  if (data.summary) {
+    const cleaned = data.summary
+      .replace(/SKIP TRADE/gi, 'trade with caution')
+      .replace(/skip trade/gi, 'trade with caution');
+    const sumEl = document.createElement('div');
+    sumEl.className = 'macro-summary';
+    sumEl.style.cssText = 'padding:6px 14px 8px;border-top:1px solid var(--line);';
+    sumEl.textContent = '⚠ ' + cleaned;
+    body.appendChild(sumEl);
+  }
+}
+
 async function fetchMacro() {
   try {
     // raw.githubusercontent.com doesn't support query strings — fetch plain URL
     const res = await fetchWithTimeout(MACRO_URL, 8000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-
-    const badge = document.getElementById('macro-skip-badge');
-    const meta  = document.getElementById('macro-meta');
-    const body  = document.getElementById('macro-events-body');
-
-    // Badge: skip=true → events present, trade with caution; skip=false → clear
-    const skip = data.skip === true;
-    badge.textContent = skip ? '⚠ Caution' : '✓ Clear';
-    badge.className   = 'macro-skip-badge ' + (skip ? 'danger' : 'ok');
-
-    // Meta: date · N events
-    const dateStr = data.date || '';
-    const count   = data.event_count != null ? data.event_count
-                    : (data.events ? data.events.length : 0);
-    meta.textContent = dateStr + (count ? '  ·  ' + count + ' event' + (count !== 1 ? 's' : '') : '');
-
-    // Events list
-    if (!data.events || data.events.length === 0) {
-      body.innerHTML = '<div class="macro-empty">No high-impact events today — trade freely.</div>';
-      return;
-    }
-
-    // Convert the feed's time string (e.g. "8:00am") → Bangkok time (UTC+7).
-    //
-    // NOTE ON THE "ET" LABEL: the tooltip/field calls this "ET" (Eastern),
-    // but empirically it is NOT Eastern Time. Verified 2026-07-02: raw
-    // value 5:30am needed to land on 7:30pm BKK (confirmed against
-    // forexfactory.com directly for the same event) — a +14h gap. Bangkok
-    // is fixed UTC+7 with no DST, so a +14h gap means the source clock is
-    // running at UTC-7, which in July is Pacific Daylight Time (PDT), not
-    // Eastern (EDT would be UTC-4, giving +11h — what we tried first, and
-    // it was still 3 hours off). Best guess: the upstream scraper's host
-    // is on Pacific system time and the "ET" label is simply wrong.
-    //
-    // Rather than hardcode "+14", which would only hold until PDT ends and
-    // the zone reverts to PST (UTC-8, i.e. +15h) around November, this
-    // computes the source zone's live UTC offset via Intl — same
-    // DST-proofing as a real Eastern-time feed would need, just pointed at
-    // America/Los_Angeles instead of America/New_York.
-    //
-    // If a future data refresh from the upstream repo turns out to be
-    // genuinely Eastern after all, flip SOURCE_TZ back to
-    // 'America/New_York' — everything else here is timezone-agnostic.
-    const SOURCE_TZ = 'America/Los_Angeles';
-
-    function getSourceUtcOffsetHours(onDate = new Date()) {
-      // Format the same instant in UTC and in SOURCE_TZ, then diff the
-      // wall-clock hours to get today's actual UTC offset. Intl carries
-      // the official IANA DST rules, so this self-corrects every DST
-      // transition — including future rule changes — with no manual upkeep.
-      const utcStr = onDate.toLocaleString('en-US', { timeZone: 'UTC', hour12: false,
-        year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-      const srcStr = onDate.toLocaleString('en-US', { timeZone: SOURCE_TZ, hour12: false,
-        year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-      const parse = s => {
-        const [d, t] = s.split(', ');
-        const [mo, da, yr] = d.split('/').map(Number);
-        const [hh, mi] = t.split(':').map(Number);
-        return Date.UTC(yr, mo - 1, da, hh === 24 ? 0 : hh, mi);
-      };
-      const diffMs = parse(srcStr) - parse(utcStr);
-      return Math.round(diffMs / 3600000); // e.g. -7 (PDT) or -8 (PST)
-    }
-
-    const BKK_UTC_OFFSET_HOURS = 7; // Bangkok has no DST — always UTC+7
-
-    function etToBkk(timeStr) {
-      if (!timeStr) return '—';
-      const m = timeStr.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
-      if (!m) return timeStr;
-      let h = parseInt(m[1], 10);
-      const min = parseInt(m[2], 10);
-      const ampm = m[3].toLowerCase();
-      if (ampm === 'pm' && h !== 12) h += 12;
-      if (ampm === 'am' && h === 12) h = 0;
-
-      // Source → BKK offset, recomputed live from Intl's DST-aware TZ data
-      // (e.g. +14 h during PDT, +15 h during PST) instead of a hardcoded number.
-      const sourceToBkkHours = BKK_UTC_OFFSET_HOURS - getSourceUtcOffsetHours();
-      const totalMin = (((h * 60 + min + sourceToBkkHours * 60) % (24 * 60)) + 24 * 60) % (24 * 60);
-      const bkkH = Math.floor(totalMin / 60);
-      const bkkM = totalMin % 60;
-      const suffix = bkkH >= 12 ? 'pm' : 'am';
-      const h12 = bkkH % 12 || 12;
-      return `${h12}:${String(bkkM).padStart(2,'0')}${suffix}`;
-    }
-
-    const rows = data.events.map(ev => {
-      const impact = (ev.impact || '').toUpperCase();
-      const impactLabel = impact === 'HIGH' ? 'HIGH' : impact === 'MEDIUM' ? 'MED' : impact || '—';
-      const bkkTime = etToBkk(ev.time);
-      return `<div class="macro-event-row">` +
-        `<span class="macro-impact ${impact}">${impactLabel}</span>` +
-        `<span class="macro-time" title="ET: ${ev.time || '—'}">${bkkTime} <span style="font-size:9px;color:var(--fg3);letter-spacing:0">BKK</span></span>` +
-        `<span class="macro-currency">&nbsp;${ev.currency || ''}&nbsp;</span>` +
-        `<span class="macro-event-name">${ev.event || '—'}</span>` +
-        `</div>`;
-    }).join('');
-
-    body.innerHTML = `<div class="macro-events" id="macro-events-grid">${rows}</div>`;
-
-    // Mark last-row items so CSS can remove their bottom border
-    // Use ResizeObserver to re-evaluate whenever layout changes
-    function markLastRow() {
-      const grid = document.getElementById('macro-events-grid');
-      if (!grid) return;
-      const items = Array.from(grid.querySelectorAll('.macro-event-row'));
-      items.forEach(el => el.removeAttribute('data-last-row'));
-      if (!items.length) return;
-      // find the bottom offset of the last item
-      const lastBottom = items[items.length - 1].getBoundingClientRect().bottom;
-      items.forEach(el => {
-        if (Math.abs(el.getBoundingClientRect().bottom - lastBottom) < 2)
-          el.setAttribute('data-last-row', '');
-      });
-    }
-    // Run once after paint, then watch for layout shifts
-    requestAnimationFrame(() => {
-      markLastRow();
-      if (window._macroRO) window._macroRO.disconnect();
-      window._macroRO = new ResizeObserver(markLastRow);
-      const grid = document.getElementById('macro-events-grid');
-      if (grid) window._macroRO.observe(grid);
-    });
-
-    // Caution summary bar — reword raw JSON text to match app semantics
-    if (data.summary) {
-      const cleaned = data.summary
-        .replace(/SKIP TRADE/gi, 'trade with caution')
-        .replace(/skip trade/gi, 'trade with caution');
-      const sumEl = document.createElement('div');
-      sumEl.className = 'macro-summary';
-      sumEl.style.cssText = 'padding:6px 14px 8px;border-top:1px solid var(--line);';
-      sumEl.textContent = '⚠ ' + cleaned;
-      body.appendChild(sumEl);
-    }
-
+    saveDataCache(MACRO_CACHE_KEY, data);
+    renderMacroData(data, false);
   } catch(e) {
+    // Only fall back to a cached payload if nothing has ever been shown yet
+    // this session (e.g. first load failed) — a transient failure after a
+    // successful render just leaves the existing DOM as-is, same as the
+    // main chart's behavior.
+    if (!macroRenderedOnce) {
+      const cached = loadDataCache(MACRO_CACHE_KEY);
+      if (cached) { renderMacroData(cached.data, true, cached.ts); return; }
+    }
     const body = document.getElementById('macro-events-body');
     if (body) body.innerHTML =
       '<div class="macro-empty" style="color:var(--danger)">⚠ Failed to load macro events: ' + e.message + '</div>';
@@ -4334,6 +4451,7 @@ async function loadHistoryFromDb(retriesLeft = 10) {
 ================================================================ */
 initGaugeBands();
 loadGithubToken();  // restore any previously-saved optional GitHub token (client-side only)
+loadDataCachesAtBoot(); // paint last known-good chart/macro data instantly, before the first live fetch lands
 initOiIvOpen();     // resolve today's true first OI IV from git history (falls back to first-fetch lock)
 loadHistory();      // restore today's session history (localStorage fallback)
 loadHistoryFromApi(); // backfill from local api.py server, if running (dev/localhost only)
