@@ -1060,6 +1060,12 @@ svg.hist-svg {
 </a>
       </div>
       <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;line-height:1.4;">⏳ Fetching GC=F…</div>
+      <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
+        <input type="password" id="inp-github-token" placeholder="GitHub token (optional)"
+          title="Optional personal access token (read-only, no scopes needed) — raises GitHub's API limit from 60/hr to 5,000/hr for the 0.99 DTE commit lookup. Stored only in this browser's localStorage; sent only to api.github.com, never to raw.githubusercontent.com or anywhere else."
+          style="font-size:9px;font-family:var(--mono);padding:2px 5px;width:150px;border:1px solid var(--line2);background:var(--bg0);color:var(--fg0);border-radius:2px;">
+        <button class="toggle-btn toggle-btn-sm" onclick="handleSaveGithubToken()" style="padding:1px 6px;">Save</button>
+      </div>
     </div>
   </header>
 
@@ -1414,6 +1420,12 @@ let liveData   = null;
 let oiData     = null;
 let refreshTimer = null;
 let countdownTimer = null;
+// Adaptive backoff for the main auto-refresh loop: multiplies the user's
+// chosen interval when fetchData() fails (see catch block below), and
+// resets to 1 on the next success. Keeps the app from continuing to hammer
+// GitHub at full speed while it's already throttling/erroring.
+let refreshBackoffMultiplier = 1;
+const REFRESH_BACKOFF_MAX = 8;
 let countdownSec   = 0;
 let intradayUpdatedAt = null;
 let oiUpdatedAt       = null;
@@ -2513,8 +2525,16 @@ async function fetchData() {
   const err=document.getElementById('err-banner');
   err.style.display='none';
   try {
-    const bust='?bust='+Date.now();
-    const [r1,r2]=await Promise.all([fetch(DATA_URL+bust),fetch(OI_URL+bust)]);
+    // No cache-busting query string and no 'no-store': using the browser's
+    // normal HTTP cache with 'no-cache' means every tick still revalidates
+    // with GitHub's CDN (so the data is never stale), but an unchanged file
+    // comes back as a cheap 304 Not Modified instead of re-downloading the
+    // full body — this is the difference between "polite polling" and the
+    // cache-defeating pattern that got this app 429'd earlier.
+    const [r1,r2]=await Promise.all([
+      fetch(DATA_URL, { cache: 'no-cache' }),
+      fetch(OI_URL,   { cache: 'no-cache' }),
+    ]);
     if (!r1.ok) throw new Error('Intraday fetch failed: '+r1.status);
     const text=await r1.text();
     liveData=parseIntraday(text);
@@ -2525,15 +2545,17 @@ async function fetchData() {
       oiData=parseIntraday(oit);
       oiUpdatedAt = new Date();
 
-      // Lock OI min-IV for the day on the very first successful OI fetch
+      // Lowest-confidence fallback for OI min-IV: if nothing has locked in a
+      // value yet at all (no cached state, no exact/earliest-commit result
+      // has landed), use whatever the live tick's min-IV happens to be so
+      // the field isn't blank. applyOiIvOpenResult() will silently no-op if
+      // a higher-confidence value already exists, and will let a later
+      // background retry upgrade this one once fetchFirstOiOfDay() succeeds.
       if (oiIvOpen === null && oiData.rows && oiData.rows.length) {
         const oiVolRows = oiData.rows.filter(r => r.vol != null && r.vol > 0);
         if (oiVolRows.length) {
           const minIv = Math.min(...oiVolRows.map(r => r.vol));
-          oiIvOpen = minIv;
-          saveOiIvOpen(minIv);
-          document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
-          syncGArrowAutoField();
+          applyOiIvOpenResult(minIv, 'fallback-live');
         }
       }
     }
@@ -2603,6 +2625,7 @@ async function fetchData() {
     }
     // Record one session-history point per successful fetch tick
     recordHistoryPoint();
+    refreshBackoffMultiplier = 1; // success — drop back to the user's chosen interval
   } catch(e) {
     err.style.display='block';
     err.textContent='⚠ Error fetching data: '+e.message;
@@ -2612,6 +2635,12 @@ async function fetchData() {
       alertEl.textContent='⚠ Fetch failed: '+e.message;
       alertEl.style.color='var(--danger)';
     }
+    // Adaptive backoff: a 429 (or any repeated failure) means we're already
+    // asking too often for what the upstream is currently willing to give —
+    // continuing to retry at the same cadence just makes that worse. Double
+    // the effective interval (capped) so the app automatically backs off;
+    // it recovers to normal speed the moment a fetch succeeds again above.
+    refreshBackoffMultiplier = Math.min(REFRESH_BACKOFF_MAX, refreshBackoffMultiplier * 2);
     const sdot=document.getElementById('sdg-dot');
     if (sdot) sdot.classList.add('stale');
   }
@@ -2702,7 +2731,15 @@ document.getElementById('btn-refresh').addEventListener('click',()=>{
   fetchData();
   fetchMacro();
   fetchSnaplogTimestamps();
-  resetCountdown(parseInt(document.getElementById('sel-interval').value)/1000);
+  // A manual click is a deliberate one-off request, not a sign the auto
+  // cadence is too slow — reset backoff and restart the auto-refresh clock
+  // from now so this click doesn't just get immediately followed by the
+  // already-pending scheduled tick.
+  clearTimeout(refreshTimer);
+  refreshBackoffMultiplier = 1;
+  const ms = parseInt(document.getElementById('sel-interval').value);
+  resetCountdown(ms/1000);
+  refreshTimer = setTimeout(runRefreshCycle, ms);
 });
 function resetMean() {
   // Prefer gold price; fall back to liveData future
@@ -2733,11 +2770,25 @@ function resetCountdown(sec) {
     if (countdownSec<=0) { clearInterval(countdownTimer); }
   },1000);
 }
+// Self-rescheduling (setTimeout, not setInterval) so each cycle: (a) waits
+// for the previous fetches to actually finish before starting the next —
+// no pile-up of overlapping requests if something is slow — and (b) can
+// apply the current backoff multiplier fresh each time, so a throttled
+// period automatically spaces requests out further instead of firing at a
+// fixed cadence regardless of how upstream is responding.
+async function runRefreshCycle() {
+  await Promise.allSettled([fetchGoldPrice(), fetchData(), fetchMacro()]);
+  const baseMs = parseInt(document.getElementById('sel-interval').value);
+  const effectiveMs = baseMs * refreshBackoffMultiplier;
+  resetCountdown(effectiveMs / 1000);
+  refreshTimer = setTimeout(runRefreshCycle, effectiveMs);
+}
 function scheduleRefresh() {
-  clearInterval(refreshTimer);
+  clearTimeout(refreshTimer);
+  refreshBackoffMultiplier = 1; // user picked a new interval — start clean, not mid-backoff
   const ms=parseInt(document.getElementById('sel-interval').value);
-  refreshTimer=setInterval(()=>{ fetchGoldPrice(); fetchData(); fetchMacro(); resetCountdown(ms/1000); },ms);
   resetCountdown(ms/1000);
+  refreshTimer = setTimeout(runRefreshCycle, ms);
 }
 document.getElementById('sel-interval').addEventListener('change',()=>{ scheduleRefresh(); });
 
@@ -2776,6 +2827,44 @@ let goldPriceFetched = false;
 const GOLD_CACHE_KEY    = 'gcf_gold_cache_v1';
 const OI_IV_OPEN_KEY    = 'gcf_oi_iv_open_v1';
 
+/* ================================================================
+  OPTIONAL GITHUB TOKEN — raises api.github.com's rate limit from 60/hr
+  (unauthenticated) to 5,000/hr for whoever supplies their own token. Never
+  hardcoded into this file (that would leak a real credential to every
+  visitor of a public page); stored only in the visitor's own browser
+  localStorage and attached only to api.github.com requests — never sent to
+  raw.githubusercontent.com or any other host, since only the REST API
+  endpoint needs or benefits from it. A read-only, no-scopes personal
+  access token is all this ever needs (it only reads commit history).
+================================================================ */
+const GITHUB_TOKEN_KEY = 'gcf_github_token_v1';
+let githubToken = null;
+
+function loadGithubToken() {
+  try { githubToken = localStorage.getItem(GITHUB_TOKEN_KEY) || null; } catch(e) {}
+  const inp = document.getElementById('inp-github-token');
+  if (inp && githubToken) inp.value = githubToken;
+}
+function saveGithubToken(token) {
+  githubToken = token || null;
+  try {
+    if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
+    else localStorage.removeItem(GITHUB_TOKEN_KEY);
+  } catch(e) {}
+}
+// Headers to attach to api.github.com calls only — empty object (no auth)
+// when no token has been supplied, so behavior is identical to before for
+// anyone who doesn't set one.
+function githubApiHeaders() {
+  return githubToken ? { Authorization: 'token ' + githubToken } : {};
+}
+function handleSaveGithubToken() {
+  const inp = document.getElementById('inp-github-token');
+  if (!inp) return;
+  saveGithubToken(inp.value.trim());
+  inp.blur();
+}
+
 // Repo/path for OIData.txt — used to look up the actual first commit of the
 // day via the GitHub API, so "first OI fetch of the day" is derived from
 // git history (same answer on every browser) rather than from whichever
@@ -2784,27 +2873,145 @@ const OI_REPO      = 'pageth/Vol2VolData';
 const OI_FILE_PATH = 'OIData.txt';
 
 // In-memory: the locked OI min-IV for today (set on first OI fetch of the day)
-let oiIvOpen = null;  // decimal form e.g. 0.123
+let oiIvOpen = null;        // decimal form e.g. 0.123
+let oiIvOpenSource = null;  // 'exact' | 'fallback-earliest' | 'fallback-live' | null
+let oiIvOpenRetryTimer = null;
 
-function loadOiIvOpen() {
+// Confidence ranking — a result can only ever *replace* the current value if
+// its source outranks (or ties, for a same-source refresh) what's already
+// locked in. This is what makes the background retry safe to fire
+// repeatedly without ever downgrading a good value back to a worse one.
+const OI_IV_SOURCE_RANK = { 'exact': 3, 'fallback-earliest': 2, 'fallback-live': 1 };
+
+// Retry backoff schedule (minutes) for re-attempting the authoritative
+// 0.99 DTE lookup after a fallback value is in place. Grows over time so a
+// prolonged outage (e.g. the shared-IP GitHub rate limit) doesn't turn into
+// a tight retry loop that makes the underlying problem worse; caps out at
+// the last entry (retries every 60 min) rather than retrying forever at
+// full speed. OI_RETRY_MAX_ATTEMPTS bounds total attempts per day so a
+// permanently-missing 0.99 snapshot (e.g. it genuinely never occurred)
+// doesn't retry indefinitely — it just settles on the best fallback found.
+const OI_RETRY_SCHEDULE_MIN = [2, 5, 15, 30, 60];
+const OI_RETRY_MAX_ATTEMPTS = 12;
+
+function loadOiIvOpenState() {
   try {
     const raw = localStorage.getItem(OI_IV_OPEN_KEY);
-    if (!raw) return;
-    const { date, minIv } = JSON.parse(raw);
+    if (!raw) return null;
+    const state = JSON.parse(raw);
     const today = new Date().toISOString().slice(0, 10);
-    if (date === today && minIv > 0) {
-      oiIvOpen = minIv;
-      document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
-      syncGArrowAutoField();
-    }
-  } catch(e) {}
+    if (state.date !== today) return null; // yesterday's state — start fresh
+    return state;
+  } catch(e) { return null; }
 }
 
-function saveOiIvOpen(minIv) {
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    localStorage.setItem(OI_IV_OPEN_KEY, JSON.stringify({ date: today, minIv }));
-  } catch(e) {}
+function saveOiIvOpenState(state) {
+  try { localStorage.setItem(OI_IV_OPEN_KEY, JSON.stringify(state)); } catch(e) {}
+}
+
+// Dims the stat + explains provenance on hover whenever the locked value
+// isn't the authoritative exact match yet, so it's visible at a glance that
+// the number might still be corrected rather than looking definitive.
+// `detail`, when provided by the caller (fetchFirstOiOfDay's specific commit
+// info), is used verbatim for the tooltip instead of the generic message.
+function updateOiIvOpenBadge(detail) {
+  const el = document.getElementById('val-oi-iv-open');
+  if (!el) return;
+  if (oiIvOpenSource === 'exact') {
+    el.style.opacity = '';
+    el.title = detail || '[oi-open] locked from the exact 0.99 DTE snapshot';
+  } else if (oiIvOpenSource) {
+    el.style.opacity = '0.55';
+    const labels = { 'fallback-earliest': 'earliest commit of the day', 'fallback-live': "today's live tick" };
+    el.title = detail || ('[oi-open] provisional value from ' + (labels[oiIvOpenSource] || oiIvOpenSource) +
+      ' — retrying in the background for the exact 0.99 DTE snapshot');
+  }
+}
+
+// Central write path for oiIvOpen. Every source of a candidate value —
+// the exact 0.99 DTE match, the earliest-commit fallback, or the live-tick
+// fallback in fetchData() — routes through here so the confidence ranking
+// is enforced in exactly one place. A lower- or equal-rank result never
+// overwrites a higher-rank one already in memory.
+function applyOiIvOpenResult(minIv, source, detail) {
+  if (!(minIv > 0)) return;
+  const newRank = OI_IV_SOURCE_RANK[source] || 0;
+  const curRank = OI_IV_SOURCE_RANK[oiIvOpenSource] || 0;
+  if (oiIvOpen !== null && newRank <= curRank) return; // nothing to upgrade
+
+  oiIvOpen = minIv;
+  oiIvOpenSource = source;
+  document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
+  updateOiIvOpenBadge(detail);
+  syncGArrowAutoField();
+  render();
+
+  const today = new Date().toISOString().slice(0, 10);
+  const prior = loadOiIvOpenState();
+  const attempts = (prior && prior.date === today) ? (prior.attempts || 0) : 0;
+  saveOiIvOpenState({ date: today, minIv, source, attempts, nextRetryAt: source === 'exact' ? null : (prior?.nextRetryAt ?? null) });
+
+  // Once the authoritative value lands, stop any pending retry — there's
+  // nothing left to upgrade to.
+  if (source === 'exact' && oiIvOpenRetryTimer) {
+    clearTimeout(oiIvOpenRetryTimer);
+    oiIvOpenRetryTimer = null;
+  }
+}
+
+// Paints whatever was cached from a previous load (any source), then, if
+// that cached value isn't yet the exact match, resumes the retry schedule
+// — respecting a persisted nextRetryAt so a page reload doesn't reset the
+// backoff and start hammering the API again from attempt zero.
+function loadOiIvOpen() {
+  const state = loadOiIvOpenState();
+  if (!state || !(state.minIv > 0)) return;
+  oiIvOpen = state.minIv;
+  oiIvOpenSource = state.source || 'fallback-live'; // old-format cache had no source field
+  document.getElementById('val-oi-iv-open').textContent = (state.minIv * 100).toFixed(2) + '%';
+  updateOiIvOpenBadge();
+  syncGArrowAutoField();
+
+  if (state.source !== 'exact' && (state.attempts || 0) < OI_RETRY_MAX_ATTEMPTS) {
+    const now = Date.now();
+    const delay = state.nextRetryAt ? Math.max(0, state.nextRetryAt - now) : 0;
+    scheduleOiIvOpenRetry(state.attempts || 0, delay);
+  }
+}
+
+// Schedules the next background retry of the exact 0.99 DTE lookup, at the
+// given delay (ms). Persists nextRetryAt/attempts immediately so a reload
+// mid-wait resumes the same schedule instead of restarting it.
+function scheduleOiIvOpenRetry(attemptsSoFar, delayMs) {
+  if (attemptsSoFar >= OI_RETRY_MAX_ATTEMPTS) return; // give up for today — best fallback stands
+  const delay = delayMs != null ? delayMs : OI_RETRY_SCHEDULE_MIN[Math.min(attemptsSoFar, OI_RETRY_SCHEDULE_MIN.length - 1)] * 60000;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const prior = loadOiIvOpenState();
+  if (prior && prior.date === today) {
+    saveOiIvOpenState({ ...prior, nextRetryAt: Date.now() + delay });
+  }
+
+  if (oiIvOpenRetryTimer) clearTimeout(oiIvOpenRetryTimer);
+  oiIvOpenRetryTimer = setTimeout(() => retryOiIvOpenLookup(attemptsSoFar), delay);
+}
+
+// Re-runs fetchFirstOiOfDay() in the background. On success, applyOiIvOpenResult()
+// decides whether it's actually an upgrade; on any outcome short of 'exact',
+// schedules another attempt at the next backoff step.
+async function retryOiIvOpenLookup(attemptsSoFar) {
+  const nextAttempts = attemptsSoFar + 1;
+  const result = await fetchFirstOiOfDay();
+  if (result && result.minIv > 0) {
+    applyOiIvOpenResult(result.minIv, result.source, result.detail);
+    if (result.source === 'exact') return; // done — no further retries needed
+  }
+  // Persist the attempt count even if this call produced nothing usable,
+  // then queue the next try (unless the cap has been reached).
+  const today = new Date().toISOString().slice(0, 10);
+  const prior = loadOiIvOpenState();
+  if (prior && prior.date === today) saveOiIvOpenState({ ...prior, attempts: nextAttempts });
+  scheduleOiIvOpenRetry(nextAttempts);
 }
 
 // The data source's collector runs on UTC+7 (confirmed: a commit timestamped
@@ -2846,7 +3053,6 @@ const TARGET_OI_OPEN_DTE = 0.99;
 const TARGET_OI_OPEN_DTE_TOL = 0.005; // match window around the target (handles rounding in the source file)
 
 async function fetchFirstOiOfDay() {
-  const statEl = document.getElementById('val-oi-iv-open');
   try {
     const sinceIso = utcPlus7DayStartIso();
     const MAX_PAGES = 20; // safety cap: 20 * 100 = 2000 commits/day
@@ -2855,7 +3061,7 @@ async function fetchFirstOiOfDay() {
 
     while (page <= MAX_PAGES) {
       const commitsUrl = `https://api.github.com/repos/${OI_REPO}/commits?path=${encodeURIComponent(OI_FILE_PATH)}&since=${sinceIso}&per_page=100&page=${page}`;
-      const cRes = await fetchWithTimeout(commitsUrl, 8000);
+      const cRes = await fetchWithTimeout(commitsUrl, 8000, 'no-cache', githubApiHeaders());
       if (!cRes.ok) {
         if (cRes.status === 403 || cRes.status === 429) throw new Error('GitHub API rate-limited (' + cRes.status + ')');
         throw new Error('commits HTTP ' + cRes.status);
@@ -2868,7 +3074,6 @@ async function fetchFirstOiOfDay() {
     }
 
     if (!allCommits.length) {
-      if (statEl) statEl.title = '[oi-open] no commits found for today (since ' + sinceIso + ')';
       return null;
     }
 
@@ -2877,73 +3082,112 @@ async function fetchFirstOiOfDay() {
     // Reverse it to scan chronologically, oldest → newest, through the day.
     const chronological = allCommits.slice().reverse();
 
-    const SCAN_CAP = 150; // safety cap on raw-content fetches for the DTE scan
-
-    let matched = null;
-    for (let i = 0; i < chronological.length && i < SCAN_CAP; i++) {
-      const commit = chronological[i];
-      const sha = commit.sha;
+    // Fetch + parse a single commit's raw content, pinned by SHA. Content at
+    // a specific git commit SHA can never change, so this is safe to cache
+    // indefinitely ('force-cache') — both within this single search (a
+    // memo map avoids re-fetching the same index twice) and across repeat
+    // page loads / retry attempts, which reuse the exact same URLs.
+    const dteCache = new Map(); // index -> {parsed, dteNum} | null
+    async function getDteAt(i) {
+      if (dteCache.has(i)) return dteCache.get(i);
+      const sha = chronological[i].sha;
       const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
-      const rRes = await fetchWithTimeout(rawUrl, 8000);
-      if (!rRes.ok) continue; // unreadable snapshot — skip and keep scanning
-      const text = await rRes.text();
-      const parsed = parseIntraday(text);
-      const dteNum = parseFloat(parsed.dte);
-      if (!isNaN(dteNum) && Math.abs(dteNum - TARGET_OI_OPEN_DTE) < TARGET_OI_OPEN_DTE_TOL) {
-        matched = { commit, sha, parsed };
-        break;
+      let result = null;
+      try {
+        const rRes = await fetchWithTimeout(rawUrl, 8000, 'force-cache');
+        if (rRes.ok) {
+          const text = await rRes.text();
+          const parsed = parseIntraday(text);
+          const dteNum = parseFloat(parsed.dte);
+          result = isNaN(dteNum) ? null : { parsed, dteNum };
+        }
+      } catch(e) { /* leave result null — treated as unreadable, skip */ }
+      dteCache.set(i, result);
+      return result;
+    }
+
+    // Binary search for the first (oldest) commit whose DTE has decayed to
+    // at-or-below the 0.99 target band. This assumes DTE decreases
+    // monotonically through the trading day (a continuous countdown to
+    // expiry) — true for the normal case, but if a mid-day contract
+    // rollover briefly resets DTE upward, the search can miss the true
+    // crossing point. That failure mode is safe, not silent: it just falls
+    // through to the "no match found" fallback below, same as any other
+    // scan miss, and this whole lookup gets retried later in the background
+    // (see retryOiIvOpenLookup) so a transient miss self-corrects over time.
+    // In exchange, this costs ~log2(N) raw fetches (≈8–11 even for 2000
+    // commits/day) instead of the old worst-case linear scan of up to 150.
+    let lo = 0, hi = chronological.length - 1, crossIdx = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const r = await getDteAt(mid);
+      if (!r) { hi = mid - 1; continue; } // unreadable snapshot — treat as "skip, narrow search"
+      if (r.dteNum <= TARGET_OI_OPEN_DTE + TARGET_OI_OPEN_DTE_TOL) {
+        crossIdx = mid;
+        hi = mid - 1; // keep searching earlier for the *first* commit at/below the band
+      } else {
+        lo = mid + 1;
       }
     }
 
-    if (!matched) {
-      // No 0.99 DTE snapshot found in the scanned window — fall back to the
-      // very first commit of the day so the field never stays blank.
+    // Verify the crossing point (and its immediate predecessor, in case
+    // sparse commits jumped straight past the exact band) actually lands
+    // within tolerance of 0.99 — the binary search only guarantees "at or
+    // below the upper edge of the band," not "close enough to 0.99."
+    let matchIdx = null;
+    if (crossIdx !== -1) {
+      const cand = await getDteAt(crossIdx);
+      if (cand && Math.abs(cand.dteNum - TARGET_OI_OPEN_DTE) <= TARGET_OI_OPEN_DTE_TOL) {
+        matchIdx = crossIdx;
+      } else if (crossIdx > 0) {
+        const prev = await getDteAt(crossIdx - 1);
+        if (prev && Math.abs(prev.dteNum - TARGET_OI_OPEN_DTE) <= TARGET_OI_OPEN_DTE_TOL) {
+          matchIdx = crossIdx - 1;
+        }
+      }
+    }
+
+    if (matchIdx === null) {
+      // No 0.99 DTE snapshot found — fall back to the very first commit of
+      // the day so the field never stays blank.
       const earliest = chronological[0];
       const sha = earliest.sha;
       const rawUrl = `https://raw.githubusercontent.com/${OI_REPO}/${sha}/${OI_FILE_PATH}`;
-      const rRes = await fetchWithTimeout(rawUrl, 8000);
+      const rRes = await fetchWithTimeout(rawUrl, 8000, 'force-cache');
       if (!rRes.ok) throw new Error('raw HTTP ' + rRes.status);
       const text = await rRes.text();
       const parsed = parseIntraday(text);
       const volRows = (parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
       if (!volRows.length) {
-        if (statEl) statEl.title = '[oi-open] no 0.99 DTE snapshot found, and earliest commit ' + sha.slice(0,7) + ' had no usable IV rows';
         return null;
       }
       const minIv = Math.min(...volRows.map(r => r.vol));
-      if (statEl) statEl.title = '[oi-open] no 0.99 DTE snapshot found within scan — fell back to earliest commit ' + sha.slice(0,7) + ' (DTE ' + parsed.dte + ') · ' + (earliest.commit?.author?.date || '');
-      return { minIv, sha };
+      const detail = '[oi-open] no 0.99 DTE snapshot found (binary search) — fell back to earliest commit ' + sha.slice(0,7) + ' (DTE ' + parsed.dte + ') · ' + (earliest.commit?.author?.date || '');
+      return { minIv, sha, source: 'fallback-earliest', detail };
     }
 
+    const matched = { commit: chronological[matchIdx], sha: chronological[matchIdx].sha, parsed: (await getDteAt(matchIdx)).parsed };
     const volRows = (matched.parsed.rows || []).filter(r => r.vol != null && r.vol > 0);
     if (!volRows.length) {
-      if (statEl) statEl.title = '[oi-open] 0.99 DTE commit ' + matched.sha.slice(0,7) + ' had no usable IV rows';
       return null;
     }
     const minIv = Math.min(...volRows.map(r => r.vol));
-    if (statEl) statEl.title = '[oi-open] 0.99 DTE snapshot from commit ' + matched.sha.slice(0,7) + ' · ' + (matched.commit.commit?.author?.date || '');
-    return { minIv, sha: matched.sha };
+    const detail = '[oi-open] locked from the exact 0.99 DTE snapshot · commit ' + matched.sha.slice(0,7) + ' · ' + (matched.commit.commit?.author?.date || '');
+    return { minIv, sha: matched.sha, source: 'exact', detail };
   } catch(e) {
     console.warn('[oi-open] fetchFirstOiOfDay failed:', e.message);
-    if (statEl) statEl.title = '[oi-open] lookup failed: ' + e.message + ' — showing fallback value';
     return null;
   }
 }
 
-// Boot-time resolver: paint the cached value instantly (if any), then try
-// to replace it with the authoritative git-history value. If that lookup
-// fails (offline, rate-limited, no commits yet today), fetchData()'s own
-// first-fetch lock still runs as a fallback so the field never stays blank.
+// Boot-time resolver: paint the cached value instantly (if any) and resume
+// any pending retry schedule, then kick off an immediate lookup attempt.
+// applyOiIvOpenResult() enforces the confidence ranking, so this is safe to
+// call even if loadOiIvOpen() already painted a same-or-better cached value.
 async function initOiIvOpen() {
   loadOiIvOpen();
-  const result = await fetchFirstOiOfDay();
-  if (result && result.minIv > 0) {
-    oiIvOpen = result.minIv;
-    saveOiIvOpen(result.minIv);
-    document.getElementById('val-oi-iv-open').textContent = (result.minIv * 100).toFixed(2) + '%';
-    syncGArrowAutoField();
-    render();
-  }
+  if (oiIvOpenSource === 'exact') return; // already have the authoritative value for today
+  await retryOiIvOpenLookup(loadOiIvOpenState()?.attempts || 0);
 }
 
 /* ================================================================
@@ -3582,11 +3826,16 @@ const CORS_PROXIES = [
   url => 'https://thingproxy.freeboard.io/fetch/' + url,
 ];
 
-// Fetch with a hard timeout
-function fetchWithTimeout(url, timeoutMs = 5000) {
+// Fetch with a hard timeout. cacheMode defaults to 'no-cache' — always
+// revalidates with the server so data is never stale, but lets an unchanged
+// response come back as a cheap 304 instead of a full re-download. Callers
+// fetching content pinned to an immutable git commit SHA (which can never
+// change) pass 'force-cache' instead, since there's nothing to revalidate.
+// extraHeaders lets callers attach e.g. an optional GitHub token.
+function fetchWithTimeout(url, timeoutMs = 5000, cacheMode = 'no-cache', extraHeaders = {}) {
   const ctrl = new AbortController();
   const tid   = setTimeout(() => ctrl.abort(), timeoutMs);
-  return fetch(url, { cache: 'no-store', signal: ctrl.signal })
+  return fetch(url, { cache: cacheMode, signal: ctrl.signal, headers: extraHeaders })
     .finally(() => clearTimeout(tid));
 }
 
@@ -3898,7 +4147,13 @@ async function fetchMacro() {
   than on every fast auto-refresh tick.
 ================================================================ */
 const SNAPLOG_DB_URL      = 'https://raw.githubusercontent.com/0xtrvkc/itd-oi-db/main/data/vol2vol.db';
-const SNAPLOG_POLL_MS     = 60000; // 60s — independent of the main auto-refresh interval
+// 5 min — matches the upstream collector's actual rewrite cadence (per the
+// module doc comment below: "only rewritten by the upstream collector every
+// ~5 min"). Polling every 60s against a file that only changes every 5 min
+// was 5x more request volume than the data could ever justify — this, plus
+// dropping the cache-busting query string below, are the two biggest levers
+// for cutting unnecessary load against an 18MB file.
+const SNAPLOG_POLL_MS     = 5 * 60 * 1000;
 
 let snaplogSqlPromise   = null;  // memoized initSqlJs() promise
 let snaplogFetching     = false; // re-entrancy guard
@@ -3931,7 +4186,10 @@ async function fetchSnaplogTimestamps() {
   snaplogFetching = true;
   try {
     const SQL = await getSqlJs();
-    const res = await fetch(`${SNAPLOG_DB_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    // No cache-busting query string — 'no-cache' still revalidates every
+    // call, but an unchanged 18MB db comes back as a 304 (near-zero bytes)
+    // instead of a full re-download every single poll.
+    const res = await fetch(SNAPLOG_DB_URL, { cache: 'no-cache' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const buf = await res.arrayBuffer();
     const db  = new SQL.Database(new Uint8Array(buf));
@@ -3984,7 +4242,11 @@ async function loadHistoryFromDb(retriesLeft = 10) {
       throw new Error('sql.js failed to load');
     }
     const SQL = await getSqlJs();
-    const res = await fetch(`${SNAPLOG_DB_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    // Same db, same URL as fetchSnaplogTimestamps() above — sharing the
+    // exact URL (no busting) also means the two pollers can share a single
+    // browser-cached/revalidated copy instead of each forcing its own
+    // full download.
+    const res = await fetch(SNAPLOG_DB_URL, { cache: 'no-cache' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const buf = await res.arrayBuffer();
     const db = new SQL.Database(new Uint8Array(buf));
@@ -4071,15 +4333,19 @@ async function loadHistoryFromDb(retriesLeft = 10) {
   BOOT
 ================================================================ */
 initGaugeBands();
+loadGithubToken();  // restore any previously-saved optional GitHub token (client-side only)
 initOiIvOpen();     // resolve today's true first OI IV from git history (falls back to first-fetch lock)
 loadHistory();      // restore today's session history (localStorage fallback)
 loadHistoryFromApi(); // backfill from local api.py server, if running (dev/localhost only)
 loadHistoryFromDb();  // backfill from the public itd-oi-db — works everywhere, incl. GitHub Pages
-// Re-sync with the public db every 3 min. loadHistoryFromDb() upserts rather
-// than replaces, so this only ever fills in points the live feed missed or
-// refines ones the db has since caught up on — the charts keep showing
-// whatever they already have the whole time, no blank/flash in between.
-setInterval(loadHistoryFromDb, 3 * 60 * 1000);
+// Re-sync with the public db every 5 min, matching the collector's actual
+// rewrite cadence (same reasoning as SNAPLOG_POLL_MS above) — polling faster
+// than the source data can possibly change just spends requests for nothing.
+// loadHistoryFromDb() upserts rather than replaces, so this only ever fills
+// in points the live feed missed or refines ones the db has since caught up
+// on — the charts keep showing whatever they already have the whole time,
+// no blank/flash in between.
+setInterval(loadHistoryFromDb, SNAPLOG_POLL_MS);
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
