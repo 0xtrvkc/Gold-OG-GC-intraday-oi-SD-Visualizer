@@ -867,6 +867,132 @@ footer {
   background: var(--line);
 }
 
+/* ── PLAYBACK BAR (scrub through the trading day, 01:00 → now) ── */
+.hist-playback {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  background: var(--bg1);
+}
+
+.hist-play-btn {
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--fg1);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s;
+  padding: 0;
+}
+.hist-play-btn:hover { border-color: var(--fg2); color: var(--fg0); background: var(--bg2); }
+.hist-play-btn.is-playing { background: var(--bg3); border-color: var(--fg2); color: var(--fg0); }
+
+.hist-scrub-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+input[type="range"].hist-scrub {
+  flex: 1 1 auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--line2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].hist-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--fg0);
+  border: 2px solid var(--bg1);
+  box-shadow: 0 0 0 1px var(--fg2);
+  cursor: pointer;
+  margin-top: -0.5px;
+}
+input[type="range"].hist-scrub::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--fg0);
+  border: 2px solid var(--bg1);
+  box-shadow: 0 0 0 1px var(--fg2);
+  cursor: pointer;
+}
+input[type="range"].hist-scrub::-moz-range-track {
+  background: var(--line2);
+  height: 3px;
+  border-radius: 2px;
+}
+
+.hist-scrub-time {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--fg1);
+  min-width: 46px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.hist-live-btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--fg2);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s;
+  flex: 0 0 auto;
+}
+.hist-live-btn:hover { border-color: var(--fg2); color: var(--fg0); }
+.hist-live-btn.is-live {
+  background: var(--bg3);
+  border-color: #2a8a4a;
+  color: var(--fg0);
+}
+.hist-live-btn.is-live::before {
+  content: '';
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #2a8a4a;
+  margin-right: 5px;
+  vertical-align: middle;
+  animation: blink 1.6s ease-in-out infinite;
+}
+
+@media (max-width: 560px) {
+  .hist-playback { flex-wrap: wrap; }
+  .hist-scrub-wrap { order: 3; flex-basis: 100%; }
+}
+
 .hist-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -1158,6 +1284,17 @@ svg.hist-svg {
     <button id="btn-view-oi"        class="toggle-btn"        onclick="setChartView('oi')"         title="Show Open Interest only">◨ OI</button>
   </div>
 
+  <!-- BIG CHART PLAYBACK: scrub / auto-play the Intraday+OI bars across strikes through the day -->
+  <div class="hist-playback" id="chart-playback">
+    <button id="btn-chart-play" class="hist-play-btn" onclick="toggleChartPlayback()" title="Play through the day" aria-label="Play">▶</button>
+    <div class="hist-scrub-wrap">
+      <input type="range" id="chart-scrub" class="hist-scrub" min="0" max="1440" step="1" value="1440"
+             oninput="onChartScrubInput(this.value)" aria-label="Scrub time of day">
+      <span class="hist-scrub-time" id="chart-scrub-time">Live</span>
+    </div>
+    <button id="btn-chart-live" class="hist-live-btn is-live" onclick="jumpChartToLive()" title="Jump back to live data">Live</button>
+  </div>
+
   <!-- CHART + SIDEBAR -->
   <div class="chart-area">
     <div class="chart-shell">
@@ -1266,6 +1403,18 @@ svg.hist-svg {
   <!-- SESSION HISTORY CHARTS -->
   <div class="hist-section">
     <div class="hist-section-title">Session History</div>
+
+    <!-- PLAYBACK: scrub / auto-play the Intraday + OI charts through the day, starting 01:00 -->
+    <div class="hist-playback">
+      <button id="btn-hist-play" class="hist-play-btn" onclick="toggleHistPlayback()" title="Play through the day" aria-label="Play">▶</button>
+      <div class="hist-scrub-wrap">
+        <input type="range" id="hist-scrub" class="hist-scrub" min="0" max="1440" step="1" value="1440"
+               oninput="onHistScrubInput(this.value)" aria-label="Scrub time of day">
+        <span class="hist-scrub-time" id="hist-scrub-time">Live</span>
+      </div>
+      <button id="btn-hist-live" class="hist-live-btn is-live" onclick="jumpHistToLive()" title="Jump back to live data">Live</button>
+    </div>
+
     <div class="hist-grid">
 
       <!-- CHART 1: VOL THROUGH THE DAY -->
@@ -2484,7 +2633,7 @@ let _renderPending = false;
 function render() {
   if (_renderPending) return;
   _renderPending = true;
-  requestAnimationFrame(() => { _renderPending = false; _render(); });
+  requestAnimationFrame(() => { _renderPending = false; _renderRouted(); });
 }
 function _render() {
   const mean=state.mean;
@@ -2512,6 +2661,361 @@ function _render() {
   updateGauge();
   if (typeof updateScrollThumb === 'function') updateScrollThumb();
 }
+
+/* ================================================================
+  BIG CHART PLAYBACK — scrub / auto-play the main Intraday+OI strike
+  chart through the trading day (01:00 local → now).
+
+  Unlike the small Session History charts (which only ever stored
+  running TOTALS per tick), this reconstructs full per-strike
+  snapshots — the exact {strike, call, put, vol} shape `liveData`/
+  `oiData` already use — straight from the public itd-oi-db's raw
+  `intraday`/`oi` tables via sql.js, which store one row per strike
+  per fetch. So scrubbing here replays the *actual* bar-by-bar
+  distribution across strikes at each point in time, not just a
+  single aggregate line.
+
+  Reuses the same already-open SNAPLOG_DB_URL fetch pattern as the
+  snapshot-log/session-history loaders above (no cache-busting, so
+  an unchanged 18–28MB db comes back as a cheap 304) — this feature
+  adds no new request volume against raw.githubusercontent.com, it
+  just runs one more SELECT against a db the page was already
+  pulling down.
+
+  Lazy: the (fairly heavy, tens of thousands of rows) snapshot query
+  only runs the first time the user actually touches the scrubber or
+  hits play — not on every page load.
+================================================================ */
+let bigIntradaySnaps  = [];      // [{t, data}] ascending, data shape == parseIntraday() output
+let bigOiSnaps        = [];
+let bigSnapsLoaded    = false;
+let bigSnapsLoading   = false;
+
+let bigCutoffT   = null;   // null = live; else a fixed ms timestamp
+let bigPlaying   = false;
+let bigPlayTimer = null;
+const BIG_PLAY_STEP_MIN = 5;    // simulated minutes advanced per animation tick
+const BIG_PLAY_TICK_MS  = 150;  // ms between animation ticks
+
+const BIG_SNAP_EMPTY = { future: null, futChg: '—', dte: '—', callTotal: '—', putTotal: '—', vol: '—', title: '', rows: [] };
+
+// Binary search: latest snapshot with t <= target, or null if none yet.
+function findSnapAtOrBefore(snaps, t) {
+  let lo = 0, hi = snaps.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (snaps[mid].t <= t) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+  }
+  return ans >= 0 ? snaps[ans] : null;
+}
+
+// Groups raw per-strike rows for one table into per-fetched_at snapshots.
+// call_oi/put_oi/vol are constant across every strike-row for a given
+// fetched_at (same quirk noted in loadHistoryFromDb above) — that's where
+// the totals (callTotal/putTotal/vol) come from; `call`/`put`/`vol_settle`
+// per row are the actual per-strike values that make up `rows`.
+function queryBigSnaps(db, table, startIso, endIso) {
+  const res = db.exec(
+    `SELECT fetched_at, future_price, future_chg, dte, call_oi, put_oi, vol, strike, call, put, vol_settle
+     FROM ${table}
+     WHERE fetched_at >= '${startIso}' AND fetched_at < '${endIso}'
+     ORDER BY fetched_at ASC, strike ASC`
+  );
+  if (!res[0]) return [];
+  const byT = new Map();
+  for (const row of res[0].values) {
+    const [fetchedAt, futPrice, futChg, dte, callOi, putOi, vol, strike, call, put, volSettle] = row;
+    const t = new Date(fetchedAt).getTime();
+    let snap = byT.get(t);
+    if (!snap) {
+      snap = { t, data: {
+        future: futPrice, futChg: futChg != null ? String(futChg) : '—',
+        dte: dte != null ? String(dte) : '—',
+        callTotal: callOi != null ? String(callOi) : '—',
+        putTotal:  putOi  != null ? String(putOi)  : '—',
+        vol: vol != null ? String(vol) : '—',
+        title: '', rows: [],
+      }};
+      byT.set(t, snap);
+    }
+    snap.data.rows.push({ strike, call: call || 0, put: put || 0, vol: volSettle });
+  }
+  return Array.from(byT.values()).sort((a, b) => a.t - b.t);
+}
+
+async function loadBigChartSnapshots() {
+  if (bigSnapsLoading || bigSnapsLoaded) return;
+  if (typeof initSqlJs === 'undefined') { setTimeout(loadBigChartSnapshots, 500); return; }
+  bigSnapsLoading = true;
+  updateChartScrubUI();
+  try {
+    const SQL = await getSqlJs();
+    const res = await fetch(SNAPLOG_DB_URL, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const db = new SQL.Database(new Uint8Array(buf));
+    try {
+      const { tStart, tEnd } = dayWindow();
+      const startIso = new Date(tStart).toISOString();
+      const endIso   = new Date(tEnd).toISOString();
+      bigIntradaySnaps = queryBigSnaps(db, 'intraday', startIso, endIso);
+      bigOiSnaps       = queryBigSnaps(db, 'oi', startIso, endIso);
+      bigSnapsLoaded = true;
+      console.log(`[big-chart] loaded ${bigIntradaySnaps.length} intraday + ${bigOiSnaps.length} oi snapshots for today`);
+    } finally {
+      db.close();
+    }
+  } catch (e) {
+    console.log('[big-chart] snapshot load failed:', e.message);
+  } finally {
+    bigSnapsLoading = false;
+    updateChartScrubUI();
+    if (bigCutoffT != null) refreshBigChartTarget(220, false);
+  }
+}
+
+/* ── TWEENING ──────────────────────────────────────────────────────────────
+   Everything above reconstructs discrete point-in-time snapshots; this part
+   glides between them. Rather than reworking drawBars/drawOIBars/etc. to
+   keep persistent, individually-animatable DOM nodes (a much bigger, riskier
+   rewrite of the existing renderer), we interpolate the *data* — lerp every
+   strike's call/put/vol between the previous and next snapshot — and feed
+   that synthetic in-between snapshot through the exact same render pipeline
+   at 60fps. Cheap to redraw (a few hundred rects), and because consecutive
+   frames are numerically close, the rebuild-every-frame approach still reads
+   as a smooth, continuous motion rather than a series of jump-cuts.
+──────────────────────────────────────────────────────────────────────────── */
+let bigAnimLive = null, bigAnimOi = null;     // interpolated frame _renderRouted() should draw, if set
+let bigTweenFromLive = null, bigTweenFromOi = null;
+let bigTweenToLive   = null, bigTweenToOi   = null;
+let bigTweenStartTs  = 0;
+let bigTweenDurMs    = 260;
+let bigTweenLinear   = false;
+let bigTweenTargetIsLive = false;
+let bigTweenActive   = false;
+let bigTweenRAF      = null;
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+function lerpNum(a, b, t) {
+  const an = a == null ? null : parseFloat(String(a).replace(/,/g, ''));
+  const bn = b == null ? null : parseFloat(String(b).replace(/,/g, ''));
+  if (an == null && bn == null) return null;
+  if (an == null || isNaN(an)) return bn;
+  if (bn == null || isNaN(bn)) return an;
+  return an + (bn - an) * t;
+}
+
+// Merges two per-strike row sets (a strike present in only one side lerps
+// from/to zero, so bars grow in or shrink out instead of popping).
+function lerpRows(fromRows, toRows, t) {
+  const fromMap = new Map((fromRows || []).map(r => [r.strike, r]));
+  const toMap   = new Map((toRows   || []).map(r => [r.strike, r]));
+  const strikes = new Set([...fromMap.keys(), ...toMap.keys()]);
+  const out = [];
+  strikes.forEach(strike => {
+    const f = fromMap.get(strike), g = toMap.get(strike);
+    const fc = f ? f.call : 0, gc = g ? g.call : 0;
+    const fp = f ? f.put  : 0, gp = g ? g.put  : 0;
+    const fv = f && f.vol != null ? f.vol : null;
+    const gv = g && g.vol != null ? g.vol : null;
+    let vol;
+    if (fv != null && gv != null) vol = fv + (gv - fv) * t;
+    else vol = gv != null ? gv : fv;
+    out.push({ strike, call: fc + (gc - fc) * t, put: fp + (gp - fp) * t, vol });
+  });
+  return out.sort((a, b) => a.strike - b.strike);
+}
+
+function lerpSnapData(from, to, t) {
+  from = from || BIG_SNAP_EMPTY;
+  to   = to   || BIG_SNAP_EMPTY;
+  const volN  = lerpNum(from.vol, to.vol, t);
+  const callN = lerpNum(from.callTotal, to.callTotal, t);
+  const putN  = lerpNum(from.putTotal, to.putTotal, t);
+  return {
+    future: lerpNum(from.future, to.future, t),
+    futChg: to.futChg,
+    dte: to.dte,
+    callTotal: callN != null ? String(Math.round(callN)) : '—',
+    putTotal:  putN  != null ? String(Math.round(putN))  : '—',
+    vol: volN != null ? volN.toFixed(2) : '—',
+    title: to.title || from.title || '',
+    rows: lerpRows(from.rows, to.rows, t),
+  };
+}
+
+function bigTweenLoop(now) {
+  if (!bigTweenActive) return;
+  const t  = bigTweenDurMs > 0 ? Math.min(1, (now - bigTweenStartTs) / bigTweenDurMs) : 1;
+  const et = bigTweenLinear ? t : easeOutCubic(t);
+  bigAnimLive = lerpSnapData(bigTweenFromLive, bigTweenToLive, et);
+  bigAnimOi   = lerpSnapData(bigTweenFromOi,   bigTweenToOi,   et);
+  _renderRouted();
+  if (t >= 1) {
+    bigTweenActive = false;
+    if (bigTweenTargetIsLive) {
+      // Hand back to the plain live fast-path so later fetch ticks keep
+      // showing up immediately, instead of staying locked to this frame.
+      bigAnimLive = null;
+      bigAnimOi   = null;
+      _renderRouted();
+    } else {
+      bigAnimLive = bigTweenToLive;
+      bigAnimOi   = bigTweenToOi;
+    }
+    bigTweenRAF = null;
+    return;
+  }
+  bigTweenRAF = requestAnimationFrame(bigTweenLoop);
+}
+
+// Starts (or redirects, if one's already running) a glide to a new target.
+// Always tweens FROM whatever is currently on screen, so rapid slider drags
+// or back-to-back play ticks chase smoothly instead of restarting from a
+// stale point.
+function tweenBigChartTo(targetLive, targetOi, durationMs, targetIsLive, linear) {
+  bigTweenFromLive = bigAnimLive || liveData;
+  bigTweenFromOi   = bigAnimOi   || oiData;
+  bigTweenToLive   = targetLive;
+  bigTweenToOi     = targetOi;
+  bigTweenStartTs  = performance.now();
+  bigTweenDurMs    = durationMs;
+  bigTweenLinear   = !!linear;
+  bigTweenTargetIsLive = !!targetIsLive;
+  bigTweenActive   = true;
+  if (!bigTweenRAF) bigTweenRAF = requestAnimationFrame(bigTweenLoop);
+}
+
+// Resolves what the chart *should* show for the current bigCutoffT (live
+// data, or the nearest snapshot at/just-before that time) and kicks off a
+// tween to it.
+function refreshBigChartTarget(durationMs, linear) {
+  if (bigCutoffT == null) {
+    tweenBigChartTo(liveData, oiData, durationMs, true, linear);
+    return;
+  }
+  const iSnap = bigSnapsLoaded ? findSnapAtOrBefore(bigIntradaySnaps, bigCutoffT) : null;
+  const oSnap = bigSnapsLoaded ? findSnapAtOrBefore(bigOiSnaps, bigCutoffT) : null;
+  tweenBigChartTo(iSnap ? iSnap.data : BIG_SNAP_EMPTY, oSnap ? oSnap.data : BIG_SNAP_EMPTY, durationMs, false, linear);
+}
+
+// _renderRouted() is what render()'s rAF callback (and the tween loop
+// directly, for lower latency) actually calls each frame: live draws
+// liveData/oiData as always; mid-tween or holding on a scrubbed position
+// swaps in the current interpolated/locked frame for one synchronous draw,
+// then restores the live arrays so nothing else in the app is affected.
+function _renderRouted() {
+  if (bigAnimLive || bigAnimOi) {
+    const realLive = liveData, realOi = oiData;
+    liveData = bigAnimLive || liveData;
+    oiData   = bigAnimOi   || oiData;
+    try {
+      _render();
+    } finally {
+      liveData = realLive;
+      oiData = realOi;
+    }
+    return;
+  }
+  _render();
+}
+
+function updateChartScrubUI() {
+  const slider = document.getElementById('chart-scrub');
+  const label  = document.getElementById('chart-scrub-time');
+  const liveBtn = document.getElementById('btn-chart-live');
+  if (!slider) return;
+  const nowMin = histNowMinutes();
+  slider.max = String(nowMin);
+  if (bigSnapsLoading) {
+    if (label) label.textContent = 'Loading…';
+    return;
+  }
+  if (bigCutoffT == null) {
+    slider.value = String(nowMin);
+    if (label) label.textContent = 'Live';
+    if (liveBtn) liveBtn.classList.add('is-live');
+  } else {
+    const { tStart } = dayWindow();
+    const mins = Math.max(0, Math.min(1440, Math.round((bigCutoffT - tStart) / 60000)));
+    slider.value = String(mins);
+    const t = tStart + mins * 60000;
+    if (label) label.textContent = new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    if (liveBtn) liveBtn.classList.remove('is-live');
+  }
+}
+
+function onChartScrubInput(minsStr) {
+  stopChartPlayback();
+  if (!bigSnapsLoaded) loadBigChartSnapshots();
+  const nowMin = histNowMinutes();
+  const mins = Math.max(0, Math.min(nowMin, parseInt(minsStr, 10) || 0));
+  const { tStart } = dayWindow();
+  bigCutoffT = (mins >= nowMin) ? null : tStart + mins * 60000;
+  updateChartScrubUI();
+  // Short + eased: keeps pace with an actively-dragged slider without
+  // feeling laggy, while still gliding rather than jump-cutting.
+  refreshBigChartTarget(140, false);
+}
+
+function jumpChartToLive() {
+  stopChartPlayback();
+  bigCutoffT = null;
+  updateChartScrubUI();
+  refreshBigChartTarget(320, false);
+}
+
+function stopChartPlayback() {
+  bigPlaying = false;
+  if (bigPlayTimer) { clearInterval(bigPlayTimer); bigPlayTimer = null; }
+  const btn = document.getElementById('btn-chart-play');
+  if (btn) { btn.textContent = '▶'; btn.title = 'Play through the day'; btn.classList.remove('is-playing'); }
+}
+
+function toggleChartPlayback() {
+  if (bigPlaying) { stopChartPlayback(); return; }
+  if (!bigSnapsLoaded) { loadBigChartSnapshots(); }
+
+  const { tStart } = dayWindow();
+  const startNowMin = histNowMinutes();
+  let mins = bigCutoffT == null ? startNowMin : Math.round((bigCutoffT - tStart) / 60000);
+  // Starting from live (or from an already-exhausted scrub) replays from
+  // the first available snapshot today, so playback doesn't spend its
+  // first several seconds crawling through the dead pre-market hours.
+  if (bigCutoffT == null || mins >= startNowMin) {
+    mins = bigIntradaySnaps.length ? Math.round((bigIntradaySnaps[0].t - tStart) / 60000) : 0;
+  }
+
+  bigPlaying = true;
+  const btn = document.getElementById('btn-chart-play');
+  if (btn) { btn.textContent = '⏸'; btn.title = 'Pause'; btn.classList.add('is-playing'); }
+
+  bigCutoffT = tStart + mins * 60000;
+  updateChartScrubUI();
+  // Linear + tick-length duration so each step's tween finishes exactly as
+  // the next one starts — consecutive segments chain into one continuous
+  // glide instead of a series of little ease-out/ease-in stutters.
+  refreshBigChartTarget(BIG_PLAY_TICK_MS, true);
+
+  bigPlayTimer = setInterval(() => {
+    const nowMin = histNowMinutes();
+    mins += BIG_PLAY_STEP_MIN;
+    if (mins >= nowMin) {
+      bigCutoffT = null; // land exactly on live data at the end of the run
+      updateChartScrubUI();
+      refreshBigChartTarget(280, false);
+      stopChartPlayback();
+      return;
+    }
+    bigCutoffT = tStart + mins * 60000;
+    updateChartScrubUI();
+    refreshBigChartTarget(BIG_PLAY_TICK_MS, true);
+  }, BIG_PLAY_TICK_MS);
+}
+
+// Keeps the slider's "now" bound and Live label fresh even between ticks.
+setInterval(() => { if (!bigPlaying) updateChartScrubUI(); }, 30000);
 
 /* ================================================================
   DATA FETCH
@@ -3513,7 +4017,7 @@ function fmtCompactNum(v) {
   return Math.round(v).toLocaleString();
 }
 
-function renderHistCharts() {
+function renderHistChartsInner() {
   renderVolHistChart();
   renderIntradayHistChart();
   renderOiHistChart();
@@ -3730,6 +4234,161 @@ function renderOiHistChart() {
     metaFn: (c,p) => (c && p) ? `OI P/C ratio ${(p/c).toFixed(2)}` : '—',
   });
 }
+
+/* ================================================================
+  HISTORY PLAYBACK — scrub slider + auto-play through the trading
+  day (01:00 local → now), reusing the exact same three chart
+  renderers above. No new network requests: this only replays data
+  the page has already fetched into gcfHistory (from the live feed
+  or the public itd-oi-db read via sql.js), so it doesn't add any
+  extra load against GitHub Pages / raw.githubusercontent.com.
+
+  histCutoffT: null = "live" (render the full history, same as
+  before this feature existed). Any timestamp = render only points
+  with t <= histCutoffT, so the chart appears to stop mid-day at
+  the scrubbed position while the x-axis keeps spanning the full
+  01:00→01:00 window.
+
+  renderHistCharts() below is now the public entry point every
+  other part of the app calls (recordHistoryPoint, the DB backfill
+  loader, boot, etc.) — it transparently applies the cutoff, if any,
+  around the real renderer (renderHistChartsInner) and always
+  restores gcfHistory to the live array afterward.
+================================================================ */
+let histCutoffT   = null;   // null = live; else a fixed ms timestamp
+let histPlaying   = false;
+let histPlayTimer = null;
+const HIST_PLAY_STEP_MIN = 5;    // simulated minutes advanced per animation tick
+const HIST_PLAY_TICK_MS  = 120;  // ms between animation ticks
+
+function renderHistCharts() {
+  if (histCutoffT == null) {
+    renderHistChartsInner();
+  } else {
+    const full = gcfHistory;
+    gcfHistory = full.filter(p => p.t <= histCutoffT);
+    try {
+      renderHistChartsInner();
+    } finally {
+      gcfHistory = full; // always restore the real live array
+    }
+  }
+  updateHistScrubUI();
+}
+
+// Minutes elapsed since today's 01:00 local anchor, clamped to the 24h window —
+// this is also the natural upper bound for the slider, since there's no data
+// beyond "now" to scrub into.
+function histNowMinutes() {
+  const { tStart } = dayWindow();
+  return Math.max(0, Math.min(1440, Math.round((Date.now() - tStart) / 60000)));
+}
+
+function histCutoffMinutes() {
+  if (histCutoffT == null) return histNowMinutes();
+  const { tStart } = dayWindow();
+  return Math.max(0, Math.min(1440, Math.round((histCutoffT - tStart) / 60000)));
+}
+
+// A scrub to an empty slice should show the "waiting for data" empty state
+// rather than silently keeping whatever the charts last drew — the sticky
+// hasData guard in each renderer exists to smooth over transient live-feed
+// gaps, not to survive a deliberate jump to a new point in time.
+function resetHistStickyFlags() {
+  ['hist-chart-vol', 'hist-chart-intraday', 'hist-chart-oi'].forEach(id => {
+    const shell = document.getElementById(id);
+    if (shell) delete shell.dataset.hasData;
+  });
+}
+
+function updateHistScrubUI() {
+  const slider = document.getElementById('hist-scrub');
+  const label  = document.getElementById('hist-scrub-time');
+  const liveBtn = document.getElementById('btn-hist-live');
+  if (!slider) return;
+  const nowMin = histNowMinutes();
+  slider.max = String(nowMin);
+  if (histCutoffT == null) {
+    slider.value = String(nowMin);
+    if (label) label.textContent = 'Live';
+    if (liveBtn) liveBtn.classList.add('is-live');
+  } else {
+    const mins = histCutoffMinutes();
+    slider.value = String(mins);
+    const { tStart } = dayWindow();
+    const t = tStart + mins * 60000;
+    if (label) label.textContent = new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    if (liveBtn) liveBtn.classList.remove('is-live');
+  }
+}
+
+// Fired on every drag of the slider (and on click-to-position).
+function onHistScrubInput(minsStr) {
+  stopHistPlayback();
+  const nowMin = histNowMinutes();
+  const mins = Math.max(0, Math.min(nowMin, parseInt(minsStr, 10) || 0));
+  // Dragging all the way to the right edge (= right now) snaps back to live
+  // mode, so the chart keeps auto-updating instead of freezing at "now".
+  const { tStart } = dayWindow();
+  histCutoffT = (mins >= nowMin) ? null : tStart + mins * 60000;
+  resetHistStickyFlags();
+  renderHistCharts();
+}
+
+function jumpHistToLive() {
+  stopHistPlayback();
+  histCutoffT = null;
+  resetHistStickyFlags();
+  renderHistCharts();
+}
+
+function stopHistPlayback() {
+  histPlaying = false;
+  if (histPlayTimer) { clearInterval(histPlayTimer); histPlayTimer = null; }
+  const btn = document.getElementById('btn-hist-play');
+  if (btn) { btn.textContent = '▶'; btn.title = 'Play through the day'; btn.classList.remove('is-playing'); }
+}
+
+// Plays the Intraday/OI (and Session Low IV) charts forward from wherever
+// the slider currently sits, up through "now" — a lightweight animation
+// over data already in gcfHistory, not a live-refresh substitute.
+function toggleHistPlayback() {
+  if (histPlaying) { stopHistPlayback(); return; }
+
+  let mins = histCutoffMinutes();
+  const startNowMin = histNowMinutes();
+  // Starting from live (or from an already-exhausted scrub) replays from
+  // the beginning of the window (01:00); mid-scrub resumes forward from there.
+  if (histCutoffT == null || mins >= startNowMin) mins = 0;
+
+  histPlaying = true;
+  const btn = document.getElementById('btn-hist-play');
+  if (btn) { btn.textContent = '⏸'; btn.title = 'Pause'; btn.classList.add('is-playing'); }
+
+  const { tStart } = dayWindow();
+  histCutoffT = tStart + mins * 60000;
+  resetHistStickyFlags();
+  renderHistCharts();
+
+  histPlayTimer = setInterval(() => {
+    const nowMin = histNowMinutes();
+    mins += HIST_PLAY_STEP_MIN;
+    if (mins >= nowMin) {
+      // Land exactly on live data at the end of the run instead of stopping
+      // one tick short of "now".
+      histCutoffT = null;
+      renderHistCharts();
+      stopHistPlayback();
+      return;
+    }
+    histCutoffT = tStart + mins * 60000;
+    renderHistCharts();
+  }, HIST_PLAY_TICK_MS);
+}
+
+// Keeps the slider's "now" bound and Live label fresh even between fetch
+// ticks (clock keeps moving even if no new data point has landed yet).
+setInterval(() => { if (!histPlaying) updateHistScrubUI(); }, 30000);
 
 // Builds invisible vertical hit-strips positioned by real timestamp so hovering anywhere
 // near a point shows a tooltip with every series' value at that index, plus a
