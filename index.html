@@ -1422,7 +1422,7 @@ svg.hist-svg {
       <div class="hist-box">
         <div class="hist-header">
           <div class="hist-title-row">
-            <span class="hist-label">Session Low IV</span>
+            <span class="hist-label">Session IV</span>
           </div>
           <div class="hist-controls">
             <button id="btn-vol-trend-lin" class="toggle-btn active" onclick="toggleHistTrend('vol','lin')" title="Linear trendline">⟍ Linear</button>
@@ -1445,7 +1445,7 @@ svg.hist-svg {
         </div>
         <div class="hist-xaxis" id="hist-vol-xaxis"></div>
         <div class="hist-legend">
-          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#9a9080;"></div><span class="lv" style="color:#9a9080">Session Low IV</span><span class="lval" id="leg-hv-vol"></span></div>
+          <div class="hist-legend-item"><div class="hist-legend-swatch" style="background:#9a9080;"></div><span class="lv" style="color:#9a9080">Recent IV</span><span class="lval" id="leg-hv-vol"></span></div>
           <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#3a6ba0;"></div><span class="lv" style="color:#3a6ba0">Linear trend</span></div>
           <div class="hist-legend-item"><div class="hist-legend-swatch dashed" style="color:#a06b3a;"></div><span class="lv" style="color:#a06b3a">Log trend</span></div>
         </div>
@@ -4034,15 +4034,13 @@ function renderVolHistChart() {
   const idxs = []; const vals = [];
   // liveData.vol is already a percentage-point number (e.g. 31.74 = 31.74%),
   // same convention as the existing "Recent IV" stat display — no *100 needed.
-  // Plot the RUNNING SESSION LOW instead of the raw tick — a non-increasing
-  // "lowest IV seen so far today" line, so the chart tracks how far
-  // volatility has compressed through the session rather than every wiggle.
-  let runningLow = Infinity;
+  // Plot the RAW tick-by-tick IV (same value as the "Recent IV" stat), so
+  // the line actually moves up and down through the day instead of only
+  // ratcheting downward.
   gcfHistory.forEach((p,i) => {
     if (p.vol != null) {
-      runningLow = Math.min(runningLow, p.vol);
       idxs.push(i);
-      vals.push(runningLow);
+      vals.push(p.vol);
     }
   });
 
@@ -4076,23 +4074,26 @@ function renderVolHistChart() {
     if (fit) drawTrendline(trendG, L, idxs, fit.predict, tc('#a06b3a','#c08a5a'), true);
   }
 
-  // Series — keyed by index, positioned by timestamp. Rendered as a clean
-  // step-after staircase (flat while the low holds, sharp drop when it's
-  // broken) since that's the true shape of a running minimum, plus a soft
-  // gradient fill for visual weight.
+  // Series — keyed by index, positioned by timestamp. Rendered as a normal
+  // polyline (raw IV moves both up and down through the day, unlike a
+  // running minimum), plus a soft gradient fill for visual weight.
   const valByIdx = {}; idxs.forEach((i,k)=>valByIdx[i]=vals[k]);
   const lineColor = tc('#9a9080','#a8a090');
-  const pts = stepPathPoints(L, idxs, valByIdx);
+  const pts = idxs.map(i => [L.toX(gcfHistory[i].t), L.toY(valByIdx[i])]);
 
   const areaG = clearG('g-hv-area');
   if (pts.length >= 2) {
     const fillUrl = makeAreaGradient('hv-defs', 'hv-grad', lineColor);
-    areaG.appendChild(el('path', { d: stepAreaD(L, pts), fill: fillUrl, stroke: 'none' }));
+    let areaD = `M${pts[0][0]},${L.pB} L${pts[0][0]},${pts[0][1]}`;
+    for (let k = 1; k < pts.length; k++) areaD += ` L${pts[k][0]},${pts[k][1]}`;
+    areaD += ` L${pts[pts.length-1][0]},${L.pB} Z`;
+    areaG.appendChild(el('path', { d: areaD, fill: fillUrl, stroke: 'none' }));
   }
 
   const lineG = clearG('g-hv-line');
   if (pts.length >= 2) {
-    lineG.appendChild(el('path', { d: stepLineD(pts), fill:'none', stroke:lineColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+    const linePts = pts.map(p => `${p[0]},${p[1]}`).join(' ');
+    lineG.appendChild(el('polyline', { points: linePts, fill:'none', stroke:lineColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
   } else if (pts.length === 1) {
     lineG.appendChild(el('circle', { cx: pts[0][0], cy: pts[0][1], r:'2.5', fill:lineColor }));
   }
@@ -4104,12 +4105,12 @@ function renderVolHistChart() {
   ptsG.appendChild(el('circle',{cx:lastPt[0],cy:lastPt[1],r:'5.5',fill:lineColor,opacity:'0.55',class:'hist-live-halo'}));
   ptsG.appendChild(el('circle',{cx:lastPt[0],cy:lastPt[1],r:'2.75',fill:lineColor}));
 
-  buildHistHitzones('g-hv-hit', 'g-hv-hover', L, idxs, [{key:'vol', label:'Session Low IV', color:lineColor, valByIdx}]);
+  buildHistHitzones('g-hv-hit', 'g-hv-hover', L, idxs, [{key:'vol', label:'Recent IV', color:lineColor, valByIdx}]);
 
   drawHistXAxis('hist-vol-xaxis', L);
 
   const last = vals[vals.length-1];
-  meta.textContent = `${idxs.length} pts  ·  session low ${last.toFixed(2)}%`;
+  meta.textContent = `${idxs.length} pts  ·  latest ${last.toFixed(2)}%`;
   const legVal = document.getElementById('leg-hv-vol');
   if (legVal) legVal.textContent = last.toFixed(2) + '%';
 }
