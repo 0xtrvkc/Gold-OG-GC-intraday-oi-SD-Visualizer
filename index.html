@@ -2903,7 +2903,25 @@ function updateChartScrubUI() {
   }
 }
 
+// Fast dragging fires many native 'input' events per animation frame; each
+// one used to trigger a full stop/lookup/tween/render synchronously, so
+// rapid left-right scrubbing piled up more work per frame than the browser
+// could paint, which is what read as "janky". RAF-debounced the same way
+// render() already is elsewhere: only the latest value per frame is acted
+// on, everything in between is coalesced away.
+let _chartScrubPending    = false;
+let _chartScrubPendingVal = null;
 function onChartScrubInput(minsStr) {
+  _chartScrubPendingVal = minsStr;
+  if (_chartScrubPending) return;
+  _chartScrubPending = true;
+  requestAnimationFrame(() => {
+    _chartScrubPending = false;
+    applyChartScrubInput(_chartScrubPendingVal);
+  });
+}
+
+function applyChartScrubInput(minsStr) {
   stopChartPlayback();
   if (!bigSnapsLoaded) loadBigChartSnapshots();
   const nowMin = histNowMinutes();
@@ -4207,8 +4225,25 @@ function updateHistScrubUI() {
   }
 }
 
-// Fired on every drag of the slider (and on click-to-position).
+// Fired on every drag of the slider (and on click-to-position). This had no
+// throttling at all, so a fast drag called renderHistCharts() synchronously
+// once per native 'input' event — many more times per second than the
+// browser can paint — which is what showed up as jank. RAF-debounced so
+// only the latest value per frame is applied, same pattern as the big
+// chart's scrub handler above.
+let _histScrubPending    = false;
+let _histScrubPendingVal = null;
 function onHistScrubInput(minsStr) {
+  _histScrubPendingVal = minsStr;
+  if (_histScrubPending) return;
+  _histScrubPending = true;
+  requestAnimationFrame(() => {
+    _histScrubPending = false;
+    applyHistScrubInput(_histScrubPendingVal);
+  });
+}
+
+function applyHistScrubInput(minsStr) {
   stopHistPlayback();
   const nowMin = histNowMinutes();
   const mins = Math.max(0, Math.min(nowMin, parseInt(minsStr, 10) || 0));
