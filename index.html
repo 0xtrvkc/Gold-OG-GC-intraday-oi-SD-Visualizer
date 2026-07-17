@@ -1949,7 +1949,12 @@ function drawOIBars(c, rows) {
 function drawVolCurve(c, rows) {
   const g = clearG('g-volcurve');
   if (!rows||!rows.length) return;
-  const visible = rows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0);
+  // parseIntraday pushes rows in raw source order, not guaranteed
+  // strike-ascending — and a <polyline> connects points in array order, so
+  // unsorted input draws a zig-zag instead of a smooth curve. Sort first.
+  const visible = rows
+    .filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0)
+    .sort((a,b)=>a.strike-b.strike);
   if (visible.length<2) return;
   const vols = visible.map(r=>r.vol);
   const minV=Math.min(...vols), maxV=Math.max(...vols);
@@ -2592,15 +2597,33 @@ function render() {
   _renderPending = true;
   requestAnimationFrame(() => { _renderPending = false; _renderRouted(); });
 }
+// grid/zones/dot-grid/bell-curve/sigma-markers/x-axis only depend on
+// mean/sd/zoom/pan/theme — never on liveData/oiData. During a scrub drag or
+// playback tween, _render() runs up to ~60x/sec while mean/sd stay fixed, so
+// rebuilding those 6 layers every single frame was pure wasted DOM work
+// (they'd draw byte-for-byte identical SVG each time). This was the actual
+// remaining source of lag after the input-debounce fix — skip the rebuild
+// unless one of their real inputs changed.
+let _lastStaticKey = null;
+
 function _render() {
   const mean=state.mean;
   const sd=state.sd>0?state.sd:75;
   const c=makeCoords(mean,sd);
-  drawGrid(c);
-  drawZones(c,mean,sd);
+
+  const staticKey = mean+'|'+sd+'|'+state.zoom+'|'+state.panOffset+'|'+isDark;
+  if (staticKey !== _lastStaticKey) {
+    drawGrid(c);
+    drawZones(c,mean,sd);
+    drawDotGrid(c,mean,sd);
+    drawCurve(c,mean,sd);
+    drawMarkers(c,mean,sd);
+    drawXAxis(mean,sd);
+    _lastStaticKey = staticKey;
+  }
+
   if (volZoneVisible) drawVolZone(c); else clearG('g-volzone');
   drawFutureLine(c);
-  drawDotGrid(c,mean,sd);
   drawBars(c,
     liveData ? liveData.rows : null,
     chartView !== 'oi'   // showBars: hide intraday fills when OI-only view
@@ -2610,10 +2633,7 @@ function _render() {
   // g-hitzones because drawBars always rebuilds them for all views
   if (chartView === 'intraday') { clearG('g-oibars'); }
   drawVolCurve(c, oiData ? oiData.rows : null);
-  drawCurve(c,mean,sd);
-  drawMarkers(c,mean,sd);
   drawArrow(c,liveData?liveData.rows:null);
-  drawXAxis(mean,sd);
   updateStats(mean,sd);
   updateGauge();
   if (typeof updateScrollThumb === 'function') updateScrollThumb();
@@ -2778,7 +2798,12 @@ function lerpRows(fromRows, toRows, t) {
     const gv = g && g.vol != null ? g.vol : null;
     let vol;
     if (fv != null && gv != null) vol = fv + (gv - fv) * t;
-    else vol = gv != null ? gv : fv;
+    // A strike with IV on only one side of the blend has no meaningful
+    // "zero" to fade from/to (unlike call/put counts), so snapping straight
+    // to that side's value used to pop the vol curve mid-tween — visible as
+    // a localized kink while scrubbing fast. Omit the point instead; it'll
+    // simply appear once the tween lands on a real, non-interpolated frame.
+    else vol = null;
     out.push({ strike, call: fc + (gc - fc) * t, put: fp + (gp - fp) * t, vol });
   });
   return out.sort((a, b) => a.strike - b.strike);
