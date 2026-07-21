@@ -673,15 +673,15 @@ svg#chart {
   display: none;
   background: var(--bg1);
   border: 1px solid var(--line2);
-  padding: 10px 14px;
+  padding: 12px 16px;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.03em;
   z-index: 200;
   white-space: nowrap;
   min-width: 190px;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.16);
 }
 #tt-strike {
   font-weight: 600;
@@ -700,6 +700,19 @@ svg#chart {
 .tt-bar-fill { height: 100%; position: absolute; left: 0; top: 0; border-radius: 1px; }
 .tt-bar-val { font-size: 11px; font-weight: 500; min-width: 38px; text-align: right; }
 .tt-bar-lbl { font-size: 10px; min-width: 30px; color: var(--fg3); }
+
+#tt-history { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tt-hist-label { font-size: 10px; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px; }
+.tt-hist-sublabel { font-size: 9px; color: var(--fg3); opacity: 0.75; font-style: italic; margin-bottom: 6px; }
+#tt-hist-chart { width: 360px; height: 170px; }
+#tt-hist-chart svg { display: block; }
+.tt-hist-loading { font-size: 11px; color: var(--fg3); padding: 48px 0; text-align: center; }
+#tt-hist-legend { display: flex; gap: 16px; margin-top: 6px; font-size: 11px; }
+.tt-hist-leg-item { display: flex; align-items: center; gap: 5px; color: var(--fg2); }
+.tt-hist-leg-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tt-hist-axis-lbl { font-size: 8.5px; font-family: var(--mono); fill: var(--fg3); }
+.tt-hist-grid-lbl { font-size: 8px; font-family: var(--mono); fill: var(--fg3); }
+
 
 /* ── ERROR ── */
 .err-banner {
@@ -1488,6 +1501,12 @@ svg.hist-svg {
   <div id="tt-strike"></div>
   <div id="tt-vol"></div>
   <div id="tt-bars"></div>
+  <div id="tt-history">
+    <div class="tt-hist-label">Today · Intraday Vol (Call/Put) @ Strike</div>
+    <div class="tt-hist-sublabel">solid = vol (left axis) · dashed = IV % (right axis) · not open interest</div>
+    <div id="tt-hist-chart"></div>
+    <div id="tt-hist-legend"></div>
+  </div>
 </div>
 
 <!-- HISTORY CHART TOOLTIP -->
@@ -2183,12 +2202,141 @@ document.getElementById('g-hitzones').addEventListener('mouseover',e=>{
   if (oicV) mkRow('OI Calls',oicV,'#1a3a6b');
   if (oipV) mkRow('OI Puts',oipV,'#c9920a');
   tip.style.display='block';
+  renderStrikeHistoryChart(Number(r.dataset.strike));
 });
 document.getElementById('g-hitzones').addEventListener('mousemove',e=>{
-  tip.style.left=(e.clientX+14)+'px';
-  tip.style.top=(e.clientY-10)+'px';
+  const tw = tip.offsetWidth  || 380;
+  const th = tip.offsetHeight || 260;
+  let left = e.clientX + 14;
+  let top  = e.clientY - 10;
+  if (left + tw > window.innerWidth  - 8) left = e.clientX - tw - 14;
+  if (top  + th > window.innerHeight - 8) top  = window.innerHeight - th - 8;
+  if (top < 8) top = 8;
+  tip.style.left = left + 'px';
+  tip.style.top  = top  + 'px';
 });
-document.getElementById('g-hitzones').addEventListener('mouseleave',()=>{ tip.style.display='none'; });
+document.getElementById('g-hitzones').addEventListener('mouseleave',()=>{ tip.style.display='none'; hoverStrike=null; });
+
+/* ================================================================
+  PER-STRIKE HISTORY (in tooltip) — small call/put-through-the-day
+  sparkline for whichever strike the mouse is currently hovering.
+  Reuses the same per-strike snapshot log (bigIntradaySnaps) that
+  powers the big-chart scrubber/playback feature, so it's lazily
+  loaded on first hover rather than on page load, and cached for
+  every hover after that.
+================================================================ */
+let hoverStrike = null;
+
+function buildStrikeSeries(strike) {
+  const { tStart, tEnd } = dayWindow();
+  const out = [];
+  for (const snap of bigIntradaySnaps) {
+    if (snap.t < tStart || snap.t > tEnd) continue;
+    const row = (snap.data.rows || []).find(rr => rr.strike === strike);
+    out.push({ t: snap.t, call: row ? (row.call||0) : 0, put: row ? (row.put||0) : 0, vol: row && row.vol != null ? row.vol : null });
+  }
+  return out;
+}
+
+function renderStrikeHistoryChart(strike) {
+  hoverStrike = strike;
+  const box = document.getElementById('tt-hist-chart');
+  const legend = document.getElementById('tt-hist-legend');
+  if (!box) return;
+
+  if (!bigSnapsLoaded) {
+    box.innerHTML = '<div class="tt-hist-loading">Loading history…</div>';
+    if (legend) legend.innerHTML = '';
+    loadBigChartSnapshots();
+    const check = () => {
+      if (hoverStrike !== strike || tip.style.display !== 'block') return; // moved on
+      if (bigSnapsLoaded) { renderStrikeHistoryChart(strike); return; }
+      setTimeout(check, 300);
+    };
+    setTimeout(check, 300);
+    return;
+  }
+
+  const series = buildStrikeSeries(strike);
+  if (series.length < 2) {
+    box.innerHTML = '<div class="tt-hist-loading">No history yet today</div>';
+    if (legend) legend.innerHTML = '';
+    return;
+  }
+
+  const W = 360, H = 170;
+  const padL = 34, padR = 32, padT = 8, padB = 46;
+  const plotL = padL, plotR = W - padR, plotT = padT, plotB = H - padB;
+  const maxV = Math.max(1, ...series.map(p => Math.max(p.call, p.put)));
+  const n = series.length;
+  const xAt = i => plotL + (n===1 ? 0 : i/(n-1)) * (plotR - plotL);
+  const yAt = v => plotB - (v/maxV) * (plotB - plotT);
+
+  // IV (vol) gets its own right-hand axis since it's a %, not a share count.
+  const volIdx = [];
+  series.forEach((p,i) => { if (p.vol != null) volIdx.push(i); });
+  const hasVol = volIdx.length >= 2;
+  const volPcts = volIdx.map(i => series[i].vol * 100);
+  const maxVolPct = hasVol ? Math.max(...volPcts) * 1.1 : 1;
+  const yVolAt = v => plotB - (v/maxVolPct) * (plotB - plotT);
+
+  const callPts = series.map((p,i) => `${xAt(i).toFixed(1)},${yAt(p.call).toFixed(1)}`).join(' ');
+  const putPts  = series.map((p,i) => `${xAt(i).toFixed(1)},${yAt(p.put).toFixed(1)}`).join(' ');
+  const volPts  = volIdx.map(i => `${xAt(i).toFixed(1)},${yVolAt(series[i].vol*100).toFixed(1)}`).join(' ');
+  const callCol = tc('#1a3a6b', '#4a7ac8');
+  const putCol  = tc('#c9920a', '#d4a830');
+  const volCol  = tc('#9a9080', '#707070');
+  const gridCol = tc('#e2d9cb', '#242424');
+  const axisCol = tc('#d8cfc0', '#2a2a2a');
+  const fmt2 = v => v>=1000 ? (v/1000).toFixed(1)+'k' : Math.round(v).toString();
+  const fmtTime = (t, opts) => new Date(t).toLocaleTimeString([], opts || {hour:'2-digit', minute:'2-digit'});
+
+  // Horizontal gridlines + value labels (0%, 50%, 100% of the max seen) — left axis (call/put).
+  let gridSvg = '';
+  [0, 0.5, 1].forEach(f => {
+    const y = yAt(maxV * f);
+    gridSvg += `<line x1="${plotL}" y1="${y.toFixed(1)}" x2="${plotR}" y2="${y.toFixed(1)}" stroke="${gridCol}" stroke-width="1"/>`;
+    gridSvg += `<text x="${plotL-5}" y="${(y+3).toFixed(1)}" text-anchor="end" class="tt-hist-grid-lbl">${fmt2(maxV*f)}</text>`;
+  });
+  // Right axis labels (IV %), only if we actually have vol data to show.
+  if (hasVol) {
+    [0, 0.5, 1].forEach(f => {
+      const y = yVolAt(maxVolPct * f);
+      gridSvg += `<text x="${(plotR+5).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="start" class="tt-hist-grid-lbl" style="fill:${volCol}">${(maxVolPct*f).toFixed(0)}%</text>`;
+    });
+  }
+
+  // X-axis baseline + many evenly-spaced timestamp ticks, labels rotated vertical.
+  const plotW = plotR - plotL;
+  const tickCount = Math.max(2, Math.min(14, n, Math.floor(plotW / 24)));
+  let axisSvg = `<line x1="${plotL}" y1="${plotB}" x2="${plotR}" y2="${plotB}" stroke="${axisCol}" stroke-width="1"/>`;
+  for (let k = 0; k < tickCount; k++) {
+    const idx = tickCount === 1 ? 0 : Math.round(k * (n-1) / (tickCount-1));
+    const x = xAt(idx);
+    const ly = plotB + 6;
+    axisSvg += `<line x1="${x.toFixed(1)}" y1="${plotB}" x2="${x.toFixed(1)}" y2="${(plotB+3).toFixed(1)}" stroke="${axisCol}" stroke-width="1"/>`;
+    axisSvg += `<text x="${x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="end" transform="rotate(-90 ${x.toFixed(1)} ${ly.toFixed(1)})" class="tt-hist-axis-lbl">${fmtTime(series[idx].t)}</text>`;
+  }
+
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    ${gridSvg}
+    ${axisSvg}
+    ${hasVol ? `<polyline points="${volPts}" fill="none" stroke="${volCol}" stroke-width="1.4" stroke-dasharray="3,2" stroke-linejoin="round"/>` : ''}
+    <polyline points="${callPts}" fill="none" stroke="${callCol}" stroke-width="1.8" stroke-linejoin="round"/>
+    <polyline points="${putPts}" fill="none" stroke="${putCol}" stroke-width="1.8" stroke-linejoin="round"/>
+  </svg>`;
+
+  const last = series[series.length-1];
+  const lastVolIdx = volIdx.length ? volIdx[volIdx.length-1] : -1;
+  if (legend) {
+    legend.innerHTML = `
+      <div class="tt-hist-leg-item"><span class="tt-hist-leg-dot" style="background:${callCol}"></span>Call Vol ${fmt2(last.call)}</div>
+      <div class="tt-hist-leg-item"><span class="tt-hist-leg-dot" style="background:${putCol}"></span>Put Vol ${fmt2(last.put)}</div>
+      ${lastVolIdx>=0 ? `<div class="tt-hist-leg-item"><span class="tt-hist-leg-dot" style="background:${volCol}"></span>IV ${(series[lastVolIdx].vol*100).toFixed(1)}%</div>` : ''}
+      <div class="tt-hist-leg-item" style="color:var(--fg3)">as of ${fmtTime(last.t, {hour:'2-digit', minute:'2-digit', second:'2-digit'})}</div>
+    `;
+  }
+}
 
 /* ================================================================
   ZOOM + PAN
