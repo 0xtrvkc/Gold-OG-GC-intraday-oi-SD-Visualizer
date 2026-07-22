@@ -896,6 +896,95 @@ footer {
   background: var(--line);
 }
 
+/* ── DTE LOW-IV LADDER ──
+   Small table sitting above Session History. For each 0.1-wide DTE rung
+   from ~1.0 down to 0.0, shows the lowest settle-vol ("low iv") strike
+   reading from the nearest actual snapshot today. Real dte trajectories
+   rarely start exactly at 1.0 (1.02, 0.9x, 0.77 have all been observed),
+   so rungs with no snapshot within tolerance are shown as "—" rather than
+   guessed — see MATCH_TOLERANCE in loadDteLadder().
+   Laid out as one compact horizontal strip (same footprint as the
+   playback/slider bar below it) rather than a tall stacked list — each
+   rung is a narrow chip; the row scrolls sideways on narrow screens
+   instead of growing tall. Full detail (exact time, nearest-dte note)
+   lives in the title="" tooltip on each chip, not on-screen. */
+.dte-ladder-box {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--line2);
+  background: var(--bg1);
+  border-radius: 3px;
+  padding: 0 2px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dte-ladder-empty {
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--fg2);
+  display: flex;
+  align-items: center;
+  height: 40px;
+  white-space: nowrap;
+}
+.dte-ladder-meta {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--fg2);
+  flex: 0 0 auto;
+}
+#dte-ladder-rows {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  width: 100%;
+}
+.dte-ladder-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 46px;
+  flex: 1 1 0;
+  padding: 5px 4px;
+  border-right: 1px solid var(--line);
+  cursor: default;
+}
+.dte-ladder-row:last-child { border-right: none; }
+.dte-ladder-row.is-empty { opacity: 0.4; }
+.dte-ladder-row.is-current { background: var(--bg2); }
+.dte-ladder-dte {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+.dte-ladder-row.is-current .dte-ladder-dte { color: var(--fg1); }
+.dte-ladder-iv {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg0);
+  white-space: nowrap;
+}
+.dte-ladder-row.is-empty .dte-ladder-iv { color: var(--fg3); font-weight: 400; }
+.dte-ladder-tag {
+  display: inline-block;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: #2a8a4a;
+  margin-top: 1px;
+}
+[data-theme="dark"] .dte-ladder-tag { background: #48a868; }
+
 /* ── PLAYBACK BAR (scrub through the trading day, 01:00 → now) ── */
 .hist-playback {
   display: flex;
@@ -1423,6 +1512,19 @@ svg.hist-svg {
     <div class="legend-item">
       <div class="legend-line" style="background:#9a9080;"></div>
       <div><span class="legend-name" style="color:#9a9080">Vol Settle</span><span class="legend-desc">Implied volatility curve</span></div>
+    </div>
+  </div>
+
+  <!-- DTE LOW-IV LADDER — small table, sits above Session History.
+       Theoretically today's dte runs 1.0 → 0.0; in practice the first
+       snapshot of the day can land anywhere (1.02, 0.9x, 0.77, ...), so
+       this only fills in rungs that actually have a nearby snapshot and
+       leaves the rest as "—" rather than guessing. See loadDteLadder(). -->
+  <div class="hist-section" id="dte-ladder-section">
+    <div class="hist-section-title">DTE Ladder <span class="dte-ladder-meta" id="dte-ladder-meta">—</span></div>
+    <div class="dte-ladder-box" id="dte-ladder-box">
+      <div class="dte-ladder-empty" id="dte-ladder-empty">Loading today's DTE ladder…</div>
+      <div id="dte-ladder-rows"></div>
     </div>
   </div>
 
@@ -5132,6 +5234,157 @@ async function loadHistoryFromDb(retriesLeft = 10) {
 }
 
 /* ================================================================
+  DTE LOW-IV LADDER
+  Small table above Session History. Theoretically today's dte glides
+  1.0 → 0.0 over the session; in practice the collector's first snapshot
+  of the day can land anywhere (1.02, 0.9x, 0.77 have all been seen), so
+  this does NOT assume a clean 1.0 start. It:
+    1. Pulls every {fetched_at, dte, vol_settle} row for TODAY ONLY
+       (same dayWindow() used by the Session History charts) from the
+       `intraday` table — that's the table the rest of the page already
+       treats as the live per-strike IV source (see the tooltip label
+       "Intraday Vol (Call/Put) @ Strike ... not open interest").
+    2. Collapses each fetched_at into one point: {t, dte, lowIv}, where
+       lowIv is the MIN positive vol_settle across strikes at that
+       instant — the exact "low iv" definition itd-oi-db itself uses
+       (see openStrikeModal()/minVolVal in itdoidb.html).
+    3. For each 0.1-wide rung from 1.0 down to 0.0, finds the single
+       snapshot whose dte is CLOSEST to that rung. If nothing today came
+       within MATCH_TOLERANCE dte of a rung, that row is left blank
+       ("—") instead of showing a misleading nearest-anything match —
+       real days that start at e.g. 0.77 dte simply won't have 1.0/0.9
+       rungs, and the table should say so rather than fake it.
+  Independent fetch of the same SNAPLOG_DB_URL (same reasoning as
+  loadHistoryFromDb above: unchanged 18–28MB db round-trips as a cheap
+  304, so a second decoupled reader costs effectively nothing extra).
+================================================================ */
+const DTE_LADDER_RUNGS = Array.from({length: 11}, (_, i) => Math.round((1 - i * 0.1) * 10) / 10); // [1.0, 0.9, ..., 0.0]
+const DTE_LADDER_MATCH_TOLERANCE = 0.06; // dte units; beyond this a rung is left blank, not guessed
+
+function fmtDteLadderPct(v, d = 4) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return (Number(v) * 100).toFixed(d) + '%';
+}
+
+function fmtDteLadderTime(t) {
+  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// Groups raw per-strike intraday rows for today into one point per
+// fetched_at: {t, dte, lowIv}. lowIv mirrors itd-oi-db's own "low iv"
+// definition — MIN of positive, non-null vol_settle across that
+// snapshot's strikes.
+function buildDteLadderPoints(rows) {
+  const byT = new Map();
+  for (const row of rows) {
+    const [fetchedAt, dte, volSettle] = row;
+    const t = new Date(fetchedAt).getTime();
+    let pt = byT.get(t);
+    if (!pt) { pt = { t, dte: dte != null ? Number(dte) : null, lowIv: null }; byT.set(t, pt); }
+    if (volSettle != null && !isNaN(volSettle) && volSettle > 0) {
+      if (pt.lowIv === null || volSettle < pt.lowIv) pt.lowIv = volSettle;
+    }
+  }
+  return Array.from(byT.values())
+    .filter(p => p.dte != null && p.lowIv != null)
+    .sort((a, b) => a.t - b.t);
+}
+
+// For each target rung, pick the closest point by |dte - rung|; reject
+// matches beyond DTE_LADDER_MATCH_TOLERANCE rather than showing a
+// stretch match from a different part of the day.
+function matchDteLadderRungs(points) {
+  return DTE_LADDER_RUNGS.map(rung => {
+    let best = null, bestDiff = Infinity;
+    for (const p of points) {
+      const diff = Math.abs(p.dte - rung);
+      if (diff < bestDiff) { bestDiff = diff; best = p; }
+    }
+    const matched = best && bestDiff <= DTE_LADDER_MATCH_TOLERANCE;
+    return { rung, point: matched ? best : null };
+  });
+}
+
+function renderDteLadder(points) {
+  const box   = document.getElementById('dte-ladder-box');
+  const empty = document.getElementById('dte-ladder-empty');
+  const rowsEl = document.getElementById('dte-ladder-rows');
+  const metaEl = document.getElementById('dte-ladder-meta');
+  if (!box || !rowsEl) return;
+
+  if (!points.length) {
+    empty.textContent = 'No intraday IV snapshots yet today.';
+    empty.style.display = '';
+    rowsEl.innerHTML = '';
+    if (metaEl) metaEl.textContent = '—';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const matched = matchDteLadderRungs(points);
+  const filled = matched.filter(m => m.point).length;
+  if (metaEl) metaEl.textContent = `${filled}/${DTE_LADDER_RUNGS.length} rungs`;
+
+  // The point with the smallest dte seen so far is "current" (closest to
+  // expiry) — a small visual anchor, not a claim about which rung is "next".
+  const minDtePoint = points.reduce((a, b) => (b.dte < a.dte ? b : a), points[0]);
+
+  rowsEl.innerHTML = matched.map(({ rung, point }) => {
+    const isCurrent = point && point === minDtePoint;
+    if (!point) {
+      return `<div class="dte-ladder-row is-empty" title="${rung.toFixed(1)} dte — no snapshot within ±${DTE_LADDER_MATCH_TOLERANCE} dte today">
+        <span class="dte-ladder-dte">${rung.toFixed(1)}</span>
+        <span class="dte-ladder-iv">—</span>
+      </div>`;
+    }
+    const diff = Math.abs(point.dte - rung);
+    const nearNote = diff < 0.005 ? '' : `, nearest was ${point.dte.toFixed(2)} dte`;
+    const titleText = `${rung.toFixed(1)} dte low iv: ${fmtDteLadderPct(point.lowIv)} · ${fmtDteLadderTime(point.t)}${nearNote}`;
+    return `<div class="dte-ladder-row${isCurrent ? ' is-current' : ''}" title="${titleText}">
+      <span class="dte-ladder-dte">${rung.toFixed(1)}${isCurrent ? '<span class="dte-ladder-tag"></span>' : ''}</span>
+      <span class="dte-ladder-iv">${fmtDteLadderPct(point.lowIv, 2)}</span>
+    </div>`;
+  }).join('');
+}
+
+async function loadDteLadder(retriesLeft = 10) {
+  try {
+    if (typeof initSqlJs === 'undefined') {
+      if (retriesLeft > 0) { setTimeout(() => loadDteLadder(retriesLeft - 1), 500); return; }
+      throw new Error('sql.js failed to load');
+    }
+    const SQL = await getSqlJs();
+    const res = await fetch(SNAPLOG_DB_URL, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const db = new SQL.Database(new Uint8Array(buf));
+    try {
+      const { tStart, tEnd } = dayWindow();
+      const startIso = new Date(tStart).toISOString();
+      const endIso   = new Date(tEnd).toISOString();
+      const iRes = db.exec(
+        `SELECT fetched_at, dte, vol_settle
+         FROM intraday
+         WHERE fetched_at >= '${startIso}' AND fetched_at < '${endIso}'
+         ORDER BY fetched_at ASC`
+      );
+      const rows = iRes[0] ? iRes[0].values : [];
+      const points = buildDteLadderPoints(rows);
+      renderDteLadder(points);
+      console.log(`[dte-ladder] ${points.length} intraday snapshots today, matched against ${DTE_LADDER_RUNGS.length} rungs`);
+    } finally {
+      db.close();
+    }
+  } catch (e) {
+    console.log('[dte-ladder] load failed:', e.message);
+    const empty = document.getElementById('dte-ladder-empty');
+    const rowsEl = document.getElementById('dte-ladder-rows');
+    if (empty) { empty.textContent = 'Could not load DTE ladder (' + e.message + ').'; empty.style.display = ''; }
+    if (rowsEl) rowsEl.innerHTML = '';
+  }
+}
+
+/* ================================================================
   BOOT
 ================================================================ */
 initGaugeBands();
@@ -5141,6 +5394,7 @@ initOiIvOpen();     // resolve today's true first OI IV from git history (falls 
 loadHistory();      // restore today's session history (localStorage fallback)
 loadHistoryFromApi(); // backfill from local api.py server, if running (dev/localhost only)
 loadHistoryFromDb();  // backfill from the public itd-oi-db — works everywhere, incl. GitHub Pages
+loadDteLadder();      // small DTE Low-IV ladder table, above Session History
 // Re-sync with the public db every 5 min, matching the collector's actual
 // rewrite cadence (same reasoning as SNAPLOG_POLL_MS above) — polling faster
 // than the source data can possibly change just spends requests for nothing.
@@ -5149,6 +5403,7 @@ loadHistoryFromDb();  // backfill from the public itd-oi-db — works everywhere
 // on — the charts keep showing whatever they already have the whole time,
 // no blank/flash in between.
 setInterval(loadHistoryFromDb, SNAPLOG_POLL_MS);
+setInterval(loadDteLadder, SNAPLOG_POLL_MS); // same cadence as the upstream collector's rewrite
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
