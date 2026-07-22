@@ -1340,7 +1340,7 @@ svg.hist-svg {
 
     <div class="input-group">
       <div class="input-label">Std Dev (σ)</div>
-      <div class="input-sub" id="sd-formula-lbl">IV × Mean × √(DTE/365)</div>
+      <div class="input-sub" id="sd-formula-lbl">IV ÷16 × Mean (Expected Distance)</div>
       <div style="display:flex;align-items:center;gap:5px;">
         <input type="number" id="inp-sd" value="" placeholder="auto" step="0.1" min="0.1" data-auto="1" style="width:56px;flex:0 0 56px;">
         <button id="btn-sd-mode" class="toggle-btn toggle-btn-sm active" onclick="toggleSdMode()" title="Switch between auto-computed and manual σ">⟳ Auto</button>
@@ -2675,6 +2675,46 @@ function toggleVolZone() {
 ================================================================ */
 let sdAutoMode = true; // starts in auto
 
+// Same IV priority chain drawArrow() uses for the "Expected Distances"
+// arrow: manual G-Arrow override > locked OI IV-open (first snapshot of
+// the day) > current OI min-IV > current Intraday min-IV. Kept as its
+// own function (rather than reusing drawArrow's inline version) because
+// drawArrow additionally restricts its fallback to strikes currently
+// visible on the chart (c.xMin/c.xMax) — not relevant here, and in
+// practice this fallback path is rarely hit since oiIvOpen locks in
+// within the first fetch cycle of the day.
+function resolveExpectedDistanceIv() {
+  if (garrowIvOverride != null) return garrowIvOverride;
+  if (oiIvOpen != null) return oiIvOpen;
+  const fallbackRows = (oiData && oiData.rows && oiData.rows.length) ? oiData.rows : (liveData && liveData.rows);
+  if (!fallbackRows || !fallbackRows.length) return null;
+  const volRows = fallbackRows.filter(r => r.vol != null && r.vol > 0);
+  if (!volRows.length) return null;
+  return Math.min(...volRows.map(r => r.vol));
+}
+
+// Std Dev (σ) auto-default. Used to scale by √(dte/365) using the
+// *current* (decaying) dte, which meant σ shrank all session long as
+// dte counted down toward zero. Default now instead equals the same
+// "Expected Distance" the arrow shows: (IV / 16) × mean — a fixed
+// one-day expected move that doesn't decay through the day. Only
+// touches the σ field/state while it's actually in auto mode; a
+// manually-entered σ is left alone.
+function recomputeAutoSd() {
+  const ivDec = resolveExpectedDistanceIv();
+  const meanForSd = state.mean > 0 ? state.mean : (liveData ? liveData.future : null);
+  if (!ivDec || ivDec <= 0 || !meanForSd || meanForSd <= 0) return;
+  computedSd = (ivDec / 16) * meanForSd;
+  const sdInp = document.getElementById('inp-sd');
+  if (sdAutoMode && sdInp && (sdInp.value === '' || sdInp.dataset.auto === '1')) {
+    sdInp.value = computedSd.toFixed(1);
+    sdInp.dataset.auto = '1';
+    state.sd = computedSd;
+    const lbl = document.getElementById('sd-formula-lbl');
+    if (lbl) lbl.textContent = `IV:${(ivDec * 100).toFixed(2)}% ÷16 × Mean → σ=${computedSd.toFixed(0)}`;
+  }
+}
+
 function toggleSdMode() {
   sdAutoMode = !sdAutoMode;
   const btn  = document.getElementById('btn-sd-mode');
@@ -3331,35 +3371,11 @@ async function fetchData() {
     }
     // Update title
     if (liveData.title) document.getElementById('h-title').textContent=liveData.title.includes('SD')?liveData.title:'SD Visualizer — '+liveData.title;
-    // Compute SD from IV interpolated at the future price + DTE
-    if (liveData.future!=null && liveData.dte) {
-      const dte=parseFloat(liveData.dte), fut=liveData.future;
-      // Interpolate IV at the future price from the vol smile
-      let ivAtFut = NaN;
-      if (liveData.rows) {
-        const vrows = liveData.rows.filter(r=>r.vol!=null&&r.vol>0);
-        const below = vrows.filter(r=>r.strike<=fut).slice(-1)[0];
-        const above = vrows.filter(r=>r.strike>=fut)[0];
-        if (below && above) {
-          const t = below.strike===above.strike ? 0 : (fut-below.strike)/(above.strike-below.strike);
-          ivAtFut = (below.vol + t*(above.vol-below.vol))*100;
-        }
-      }
-      // Fallback to global vol if smile interpolation failed
-      if (isNaN(ivAtFut)) ivAtFut = parseFloat(liveData.vol);
-      if (!isNaN(ivAtFut)&&!isNaN(dte)&&dte>0&&ivAtFut>0) {
-        // Use mean input box value (state.mean) as the mean in the formula
-        const meanForSd = state.mean > 0 ? state.mean : fut;
-        computedSd=meanForSd*(ivAtFut/100)*Math.sqrt(dte/365);
-        const sdInp=document.getElementById('inp-sd');
-        if (sdAutoMode && (sdInp.value===''||sdInp.dataset.auto==='1')) {
-          sdInp.value=computedSd.toFixed(1);
-          sdInp.dataset.auto='1';
-          state.sd=computedSd;
-          document.getElementById('sd-formula-lbl').textContent=`IV@fut:${ivAtFut.toFixed(1)}% DTE:${dte} → σ=${computedSd.toFixed(0)}`;
-        }
-      }
-    }
+    // Std Dev (σ) auto-default == Expected Distance (IV/16 × mean), the
+    // same value the "Expected Distances" arrow shows — see
+    // recomputeAutoSd(). No longer scaled by √(dte/365), which shrank σ
+    // over the course of the day as the current dte decayed toward zero.
+    recomputeAutoSd();
     // Set mean from future — only if gold price hasn't been set yet
     const meanInp=document.getElementById('inp-mean');
     if (liveData.future!=null && (meanInp.value===''||meanInp.dataset.auto==='1')) {
@@ -3463,29 +3479,9 @@ document.getElementById('inp-mean').addEventListener('input',function(){
     state.mean=v;
     this.dataset.auto='';
     document.getElementById('btn-mean-reset').style.display='inline-block';
-    // Recompute SD if it's in auto mode, using updated mean
-    const sdInp = document.getElementById('inp-sd');
-    if (sdInp.dataset.auto==='1' && liveData && liveData.dte) {
-      const dte = parseFloat(liveData.dte);
-      const fut = liveData.future;
-      let ivAtFut = NaN;
-      if (liveData.rows) {
-        const vrows = liveData.rows.filter(r=>r.vol!=null&&r.vol>0);
-        const below = vrows.filter(r=>r.strike<=fut).slice(-1)[0];
-        const above = vrows.filter(r=>r.strike>=fut)[0];
-        if (below && above) {
-          const t2 = below.strike===above.strike ? 0 : (fut-below.strike)/(above.strike-below.strike);
-          ivAtFut = (below.vol + t2*(above.vol-below.vol))*100;
-        }
-      }
-      if (isNaN(ivAtFut)) ivAtFut = parseFloat(liveData.vol);
-      if (!isNaN(ivAtFut) && !isNaN(dte) && dte>0 && ivAtFut>0 && v>0) {
-        computedSd = v*(ivAtFut/100)*Math.sqrt(dte/365);
-        sdInp.value = computedSd.toFixed(1);
-        state.sd = computedSd;
-        document.getElementById('sd-formula-lbl').textContent=`IV@fut:${ivAtFut.toFixed(1)}% DTE:${dte} → σ=${computedSd.toFixed(0)}`;
-      }
-    }
+    // Recompute σ (auto-mode only) — Expected Distance depends on mean,
+    // no longer on dte.
+    recomputeAutoSd();
     render();
   }
 });
@@ -3726,6 +3722,7 @@ function applyOiIvOpenResult(minIv, source, detail) {
   document.getElementById('val-oi-iv-open').textContent = (minIv * 100).toFixed(2) + '%';
   updateOiIvOpenBadge(detail);
   syncGArrowAutoField();
+  recomputeAutoSd(); // σ auto-default tracks the same IV the arrow uses
   render();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -3753,6 +3750,7 @@ function loadOiIvOpen() {
   document.getElementById('val-oi-iv-open').textContent = (state.minIv * 100).toFixed(2) + '%';
   updateOiIvOpenBadge();
   syncGArrowAutoField();
+  recomputeAutoSd();
 
   if (state.source !== 'exact' && (state.attempts || 0) < OI_RETRY_MAX_ATTEMPTS) {
     const now = Date.now();
@@ -3994,6 +3992,7 @@ function resetGArrowIv() {
   if (oiIvOpen != null) inp.value = (oiIvOpen * 100).toFixed(2);
   document.getElementById('btn-garrow-reset').style.display = 'none';
   document.getElementById('garrow-formula-lbl').textContent = 'OI IV open ÷ 16 × Mean';
+  recomputeAutoSd(); // σ auto-default tracks the same IV the arrow uses
   render();
 }
 
@@ -4004,6 +4003,7 @@ document.getElementById('inp-garrow-iv').addEventListener('input', function() {
     garrowIvOverride = v / 100; // stored as decimal, matches oiIvOpen's convention
     document.getElementById('btn-garrow-reset').style.display = 'inline-block';
     document.getElementById('garrow-formula-lbl').textContent = 'Manual override';
+    recomputeAutoSd(); // σ auto-default tracks the same IV the arrow uses
   } else if (this.value === '') {
     // Cleared field → fall back to auto
     resetGArrowIv();
