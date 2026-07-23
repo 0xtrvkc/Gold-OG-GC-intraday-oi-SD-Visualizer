@@ -985,6 +985,176 @@ footer {
 }
 [data-theme="dark"] .dte-ladder-tag { background: #48a868; }
 
+/* ── TRADE RECORDER ──
+   No manual inputs — just an Open/Exit button pair (and a "Closing"
+   dropdown that only appears when 2+ positions are open at once). Every
+   column in the row, including future price, sd, iv, totals, zone, and
+   a full per-strike call/put snapshot, is captured automatically from
+   whatever the page is showing at the moment you hit save. Future price
+   (and Win/Lose) stay editable in the table afterward in case the
+   auto-captured tick needs correcting or the outcome isn't known yet.
+   In-memory only — clears on refresh, matching the "till i refresh"
+   requirement. Rows are meant to be selected + copied (tab-separated)
+   straight into Google Sheets — the per-strike columns are reconciled
+   across the whole log's strike union at export time (see copyTradeLog()). */
+.tr-box {
+  border: 1px solid var(--line2);
+  background: var(--bg1);
+  border-radius: 3px;
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.tr-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.tr-field { display: flex; flex-direction: column; gap: 4px; }
+.tr-field label {
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.tr-field input, .tr-field select {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--line2);
+  border-radius: 2px;
+  background: var(--bg0);
+  color: var(--fg0);
+  width: 118px;
+}
+.tr-field select { width: 170px; }
+.tr-field input:focus, .tr-field select:focus { outline: none; border-color: var(--fg2); }
+.tr-btn-open  { border-color: var(--oi-call); color: var(--oi-call); }
+.tr-btn-open:hover  { background: var(--oi-call-fill); }
+.tr-btn-exit  { border-color: var(--oi-put); color: var(--oi-put); }
+.tr-btn-exit:hover  { background: var(--oi-put-fill); }
+.tr-actions-spacer { flex: 1 1 auto; }
+.tr-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tr-table-wrap { overflow-x: auto; }
+.tr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.tr-table th {
+  text-align: left;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg3);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line2);
+  position: sticky;
+  top: 0;
+}
+.tr-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg1);
+}
+.tr-table tr.tr-row-open td.tr-type  { color: var(--oi-call); font-weight: 600; }
+.tr-table tr.tr-row-exit td.tr-type  { color: var(--oi-put); font-weight: 600; }
+.tr-table td.tr-num, .tr-table td.tr-future { color: var(--fg0); font-weight: 600; }
+.tr-del-btn {
+  border: none;
+  background: transparent;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.tr-del-btn:hover { color: var(--danger); }
+.tr-empty {
+  padding: 14px 4px;
+  font-size: 11px;
+  color: var(--fg3);
+}
+.tr-strikes-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border: 1px solid var(--line2);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--fg1);
+  cursor: pointer;
+}
+.tr-strikes-btn:hover { border-color: var(--fg2); color: var(--fg0); background: var(--bg2); }
+.tr-strikes-btn.is-open { border-color: var(--accent); color: var(--fg0); }
+.tr-detail-row td {
+  padding: 8px 10px 12px;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--line);
+}
+.tr-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 14px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.tr-detail-strike { color: var(--fg3); font-weight: 600; }
+.tr-detail-c { color: var(--oi-call); }
+.tr-detail-p { color: var(--oi-put); }
+.tr-detail-empty { color: var(--fg3); font-size: 10.5px; padding: 4px 0; }
+.tr-result-select {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 4px;
+  border: 1px solid var(--line2);
+  border-radius: 2px;
+  background: var(--bg0);
+  color: var(--fg1);
+  width: 72px;
+}
+.tr-result-select:focus { outline: none; border-color: var(--fg2); }
+.tr-result-select.res-win  { border-color: var(--oi-call); color: var(--oi-call); }
+.tr-result-select.res-lose { border-color: var(--danger); color: var(--danger); }
+.tr-tag-select {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 4px;
+  border: 1px solid var(--line2);
+  border-radius: 2px;
+  background: var(--bg0);
+  color: var(--fg1);
+  width: 110px;
+}
+.tr-tag-select:focus { outline: none; border-color: var(--fg2); }
+.tr-result-dash { color: var(--fg3); padding-left: 4px; }
+.tr-future-edit {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--fg0);
+  width: 76px;
+}
+.tr-future-edit:hover   { border-color: var(--line2); }
+.tr-future-edit:focus   { outline: none; border-color: var(--fg2); background: var(--bg0); }
+
 /* ── PLAYBACK BAR (scrub through the trading day, 01:00 → now) ── */
 .hist-playback {
   display: flex;
@@ -1575,6 +1745,51 @@ svg.hist-svg {
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- TRADE RECORDER — no manual inputs, just Save Open / Save Exit. Time
+       and future price are auto-stamped/auto-captured at save; every other
+       column, including a full per-strike call/put snapshot (intraday +
+       OI), is auto-captured from the live page state too. Future price
+       and Win/Lose stay editable in the table afterward. In-memory only
+       (clears on refresh). Meant to be select-all + copied (tab-separated)
+       straight into Google Sheets — see copyTradeLog() for how the
+       per-strike columns are reconciled across a strike range that drifts
+       through the day. See recordTrade(). -->
+  <div class="hist-section" id="trade-recorder-section">
+    <div class="hist-section-title">Trade Recorder <span class="dte-ladder-meta" id="tr-meta">0 entries</span></div>
+
+    <div class="tr-box">
+      <div class="tr-input-row">
+        <div class="tr-field" id="tr-magic-wrap" style="display:none;">
+          <label for="tr-magic-select">Closing</label>
+          <select id="tr-magic-select"></select>
+        </div>
+        <button class="btn tr-btn-open" onclick="recordTrade('OPEN')">Save Open</button>
+        <button class="btn tr-btn-exit" onclick="recordTrade('EXIT')">Save Exit</button>
+      </div>
+
+      <div class="tr-table-actions">
+        <button class="btn" onclick="copyTradeLog()">Copy for Sheets</button>
+        <button class="btn" onclick="clearTradeLog()">Clear</button>
+      </div>
+
+      <div class="tr-table-wrap">
+        <table class="tr-table" id="tr-table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Future Price</th><th>Result</th><th>Strategy</th><th>Martingale</th><th>Magic #</th><th>Type</th><th>Date</th><th>Time</th><th>DTE</th>
+              <th>SD</th><th>Expected Distance</th><th>Recent IV</th>
+              <th>Intraday Calls</th><th>Intraday Puts</th>
+              <th>OI Calls</th><th>OI Puts</th><th>OI IV Open</th>
+              <th>Fut Δ</th><th>Zone</th><th>Zone %</th><th>Strikes</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="tr-tbody"></tbody>
+        </table>
+        <div class="tr-empty" id="tr-empty">No trades recorded yet — hit Save Open / Save Exit to log a row (future price is captured automatically; edit it in the table if it needs correcting).</div>
+      </div>
     </div>
   </div>
 
@@ -4118,6 +4333,340 @@ function recordHistoryPoint() {
   if (gcfHistory.length > HIST_MAX_POINTS) gcfHistory.shift();
   saveHistory();
   renderHistCharts();
+}
+
+/* ================================================================
+  TRADE RECORDER
+  Minimal manual input: Time + Future Price, plus Save Open / Save Exit.
+  Every other column — DTE, SD, IV, Intraday/OI Calls & Puts, Fut Δ,
+  sigma zone — is a snapshot of whatever the page is showing at the
+  moment you hit save, so an Open row and its Exit row capture the
+  market context at each end, not just the price you typed.
+
+  Deliberately in-memory only (tradeLog array) — no localStorage — so
+  it clears on refresh exactly as requested.
+
+  Open/Exit are logged as SEPARATE rows, linked by "Magic #":
+    - Save Open always mints a brand-new magic number (a monotonic
+      counter that is never reused, even after rows are deleted), so
+      no two trades can ever end up sharing one by accident.
+    - Save Exit reuses the magic number of the trade it's closing:
+        · 0 open trades pending  → mints its own new magic number
+          (an orphan exit, still unique).
+        · 1 open trade pending   → auto-matched, no extra input.
+        · 2+ open trades pending → a "Closing" dropdown appears next
+          to the inputs so you pick which open trade this exit
+          belongs to (defaults to the most recently opened). This
+          only shows up when there's real ambiguity — with one
+          position at a time the UI stays just Time + Future Price.
+  "Open trades pending" is recomputed from tradeLog itself (any OPEN
+  row whose magic number has no matching EXIT row yet), so deleting a
+  row keeps everything consistent automatically.
+================================================================ */
+let tradeLog = [];
+let trMagicSeq = 1; // ever-increasing — guarantees a magic # is never reused
+
+// Pull a stat straight from the DOM so the recorded value always matches
+// exactly what's on screen (same formatting, same "—" when unavailable).
+function trDomVal(id) {
+  const el = document.getElementById(id);
+  return el && el.textContent.trim() ? el.textContent.trim() : '—';
+}
+
+// Expected Distance: (IV / 16) × mean, the same formula the "Expected
+// Distances" arrow and SD-auto-mode use — computed fresh here so it's
+// captured independently of whatever the SD field is currently showing
+// (SD can be in manual mode and diverge from the formula).
+function trExpectedDistance() {
+  const ivDec = resolveExpectedDistanceIv();
+  const mean = state.mean > 0 ? state.mean : (liveData ? liveData.future : null);
+  if (!ivDec || ivDec <= 0 || !mean || mean <= 0) return '—';
+  return ((ivDec / 16) * mean).toFixed(1);
+}
+
+// Derives the list of still-open trades (OPEN rows with no matching EXIT
+// row yet) directly from tradeLog — no separately-maintained state to
+// drift out of sync when rows get deleted.
+function trOpenPositions() {
+  const closedMagics = new Set(tradeLog.filter(r => r.type === 'EXIT').map(r => r.magic));
+  return tradeLog.filter(r => r.type === 'OPEN' && !closedMagics.has(r.magic));
+}
+
+// Shows/hides + populates the "Closing" dropdown. Only visible when 2+
+// open trades are pending and an exit needs to be told which one it closes.
+function trUpdateMagicSelector() {
+  const wrap = document.getElementById('tr-magic-wrap');
+  const sel  = document.getElementById('tr-magic-select');
+  if (!wrap || !sel) return;
+  const open = trOpenPositions();
+  if (open.length < 2) {
+    wrap.style.display = 'none';
+    sel.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  sel.innerHTML = open.map(p =>
+    `<option value="${p.magic}">#${p.magic} · ${p.time} @ ${p.future}</option>`
+  ).join('');
+  sel.selectedIndex = open.length - 1; // default to most recently opened
+}
+
+function recordTrade(type) {
+  // No manual Future Price field anymore — auto-captured from whatever
+  // the page is currently showing as the live future price. If it's off
+  // (stale tick, etc.) it's corrected afterward via the editable Future
+  // Price cell in the table, not re-typed here.
+  const future = (liveData && liveData.future != null) ? String(liveData.future) : '';
+  // Time is always "now" at the moment Save Open/Exit is clicked.
+  const time = new Date().toTimeString().slice(0, 8);
+
+  let magic;
+  if (type === 'OPEN') {
+    magic = trMagicSeq++;
+  } else {
+    const open = trOpenPositions();
+    if (open.length === 0) {
+      magic = trMagicSeq++; // orphan exit — still guaranteed unique
+    } else if (open.length === 1) {
+      magic = open[0].magic;
+    } else {
+      const sel = document.getElementById('tr-magic-select');
+      const chosen = sel && sel.value ? parseInt(sel.value, 10) : open[open.length - 1].magic;
+      magic = chosen;
+    }
+  }
+
+  const row = {
+    magic, type,
+    result: type === 'EXIT' ? '' : null, // Win/Lose tag, EXIT rows only — set later via the dropdown
+    strategy:   type === 'OPEN' ? '' : null, // Mean Reverse / Recovery / Follow Squeeze / After Squeeze — OPEN rows only, set later via the dropdown
+    martingale: type === 'OPEN' ? '' : null, // Martingale #1-#4 — OPEN rows only, set later via the dropdown
+    date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD, sheet-friendly
+    time,
+    future,
+    dte:      (liveData && liveData.dte != null) ? String(liveData.dte) : '—',
+    sd:       (state.sd > 0) ? state.sd.toFixed(2) : '—',
+    expDist:  trExpectedDistance(),
+    iv:       trDomVal('val-vol'),
+    intraCall: trDomVal('val-calls'),
+    intraPut:  trDomVal('val-puts'),
+    oiCall:    trDomVal('val-oi-calls'),
+    oiPut:     trDomVal('val-oi-puts'),
+    oiIvOpen:  trDomVal('val-oi-iv-open'),
+    futChg:    trDomVal('val-futchg'),
+    zone:      trDomVal('sdg-zone-name'),
+    zonePct:   trDomVal('sdg-zone-pct'),
+    // Full per-strike snapshot, on top of the totals above — every strike
+    // visible in the chain at the moment of save, not just the aggregate.
+    // The visible strike range drifts through the day, so this is stored
+    // sparse (only the strikes that existed at THIS save) and reconciled
+    // into a common column set later, at export time — see copyTradeLog().
+    strikesIntra: (liveData && liveData.rows) ? liveData.rows.map(r => ({ strike: r.strike, call: r.call, put: r.put })) : [],
+    strikesOi:    (oiData   && oiData.rows)   ? oiData.rows.map(r   => ({ strike: r.strike, call: r.call, put: r.put })) : [],
+  };
+
+  tradeLog.push(row);
+  renderTradeLog();
+  trUpdateMagicSelector();
+}
+
+function deleteTradeRow(idx) {
+  tradeLog.splice(idx, 1);
+  renderTradeLog();
+  trUpdateMagicSelector();
+}
+
+function clearTradeLog() {
+  if (tradeLog.length && !confirm('Clear all ' + tradeLog.length + ' recorded trade rows? This cannot be undone.')) return;
+  tradeLog = [];
+  trMagicSeq = 1;
+  renderTradeLog();
+  trUpdateMagicSelector();
+}
+
+function renderTradeLog() {
+  const tbody = document.getElementById('tr-tbody');
+  const empty = document.getElementById('tr-empty');
+  const meta  = document.getElementById('tr-meta');
+  const table = document.getElementById('tr-table');
+  if (!tbody) return;
+
+  meta.textContent = tradeLog.length + (tradeLog.length === 1 ? ' entry' : ' entries');
+
+  if (!tradeLog.length) {
+    table.style.display = 'none';
+    empty.style.display = '';
+    return;
+  }
+  table.style.display = '';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = tradeLog.map((r, i) => {
+    const nStrikes = new Set([...(r.strikesIntra||[]).map(s=>s.strike), ...(r.strikesOi||[]).map(s=>s.strike)]).size;
+    const futureCell = `<input type="number" step="0.1" class="tr-future-edit" value="${r.future}" onchange="setTradeFuture(${i}, this.value)">`;
+    const resultCell = r.type === 'EXIT'
+      ? `<select class="tr-result-select ${r.result === 'Win' ? 'res-win' : r.result === 'Lose' ? 'res-lose' : ''}" onchange="setTradeResult(${i}, this.value)">
+           <option value=""${r.result ? '' : ' selected'}>—</option>
+           <option value="Win"${r.result === 'Win' ? ' selected' : ''}>Win</option>
+           <option value="Lose"${r.result === 'Lose' ? ' selected' : ''}>Lose</option>
+         </select>`
+      : `<span class="tr-result-dash">—</span>`;
+    const strategyCell   = r.type === 'OPEN' ? trTagSelect(i, 'strategy',   r.strategy,   TR_STRATEGY_OPTIONS) : `<span class="tr-result-dash">—</span>`;
+    const martingaleCell = r.type === 'OPEN' ? trTagSelect(i, 'martingale', r.martingale, TR_MARTINGALE_OPTIONS) : `<span class="tr-result-dash">—</span>`;
+    return `
+    <tr class="${r.type === 'OPEN' ? 'tr-row-open' : 'tr-row-exit'}">
+      <td class="tr-future">${futureCell}</td>
+      <td>${resultCell}</td>
+      <td>${strategyCell}</td>
+      <td>${martingaleCell}</td>
+      <td class="tr-num">${r.magic}</td>
+      <td class="tr-type">${r.type}</td>
+      <td>${r.date}</td>
+      <td>${r.time}</td>
+      <td>${r.dte}</td>
+      <td>${r.sd}</td>
+      <td>${r.expDist}</td>
+      <td>${r.iv}</td>
+      <td>${r.intraCall}</td>
+      <td>${r.intraPut}</td>
+      <td>${r.oiCall}</td>
+      <td>${r.oiPut}</td>
+      <td>${r.oiIvOpen}</td>
+      <td>${r.futChg}</td>
+      <td>${r.zone}</td>
+      <td>${r.zonePct}</td>
+      <td><button class="tr-strikes-btn" id="tr-strikes-btn-${i}" onclick="toggleTradeStrikes(${i})">${nStrikes || 0} strikes</button></td>
+      <td><button class="tr-del-btn" onclick="deleteTradeRow(${i})" title="Delete row">✕</button></td>
+    </tr>
+    <tr class="tr-detail-row" id="tr-detail-row-${i}" style="display:none;"><td colspan="22">${renderTradeStrikeDetail(r)}</td></tr>
+  `;
+  }).join('');
+}
+
+// Options for the two freeform tag dropdowns — Strategy and Martingale
+// step. Both start blank ("—") and are meant to be filled in later, same
+// pattern as the Win/Lose Result column.
+const TR_STRATEGY_OPTIONS   = ['Mean Reverse', 'Recovery', 'Follow Squeeze', 'After Squeeze'];
+const TR_MARTINGALE_OPTIONS = ['Martingale #1', 'Martingale #2', 'Martingale #3', 'Martingale #4'];
+
+// Builds a small tag <select> for the given row/field, shared by the
+// Strategy and Martingale columns (every row gets one, unlike Result
+// which is EXIT-only).
+function trTagSelect(i, field, value, options) {
+  const opts = options.map(o => `<option value="${o}"${value === o ? ' selected' : ''}>${o}</option>`).join('');
+  return `<select class="tr-tag-select" onchange="setTradeTag(${i}, '${field}', this.value)">
+      <option value=""${value ? '' : ' selected'}>—</option>
+      ${opts}
+    </select>`;
+}
+
+// Updates a row's Strategy or Martingale tag in place — same in-place
+// pattern as setTradeResult, no full re-render needed.
+function setTradeTag(i, field, value) {
+  if (!tradeLog[i]) return;
+  tradeLog[i][field] = value;
+}
+
+// Updates a row's Win/Lose tag in place (EXIT rows only) without a full
+// table re-render, so expanded strike-detail rows and scroll position
+// aren't disturbed just from tagging an outcome.
+function setTradeResult(i, value) {
+  if (!tradeLog[i]) return;
+  tradeLog[i].result = value;
+  const sel = document.querySelector(`#tr-tbody tr:nth-of-type(${i * 2 + 1}) .tr-result-select`);
+  if (sel) sel.className = 'tr-result-select ' + (value === 'Win' ? 'res-win' : value === 'Lose' ? 'res-lose' : '');
+}
+
+// Lets a logged Future Price be corrected after the fact (fat-fingered
+// entry, etc.) without touching any other captured column — updates
+// tradeLog in place, no full re-render needed.
+function setTradeFuture(i, value) {
+  if (!tradeLog[i]) return;
+  tradeLog[i].future = value;
+}
+
+// Builds the (initially hidden) per-strike breakdown shown when a row's
+// "N strikes" button is toggled — the full call/put chain snapshot, not
+// just the totals visible in the main row.
+function renderTradeStrikeDetail(r) {
+  const intraMap = new Map((r.strikesIntra||[]).map(s => [s.strike, s]));
+  const oiMap    = new Map((r.strikesOi||[]).map(s => [s.strike, s]));
+  const strikes  = Array.from(new Set([...intraMap.keys(), ...oiMap.keys()])).sort((a,b)=>a-b);
+  if (!strikes.length) return '<div class="tr-detail-empty">No strike data was available at save time.</div>';
+  const cells = strikes.map(k => {
+    const iv = intraMap.get(k), oi = oiMap.get(k);
+    const ivTxt = iv ? `<span class="tr-detail-c">${iv.call}C</span>/<span class="tr-detail-p">${iv.put}P</span>` : '—';
+    const oiTxt = oi ? `<span class="tr-detail-c">${oi.call}C</span>/<span class="tr-detail-p">${oi.put}P</span>` : '—';
+    return `<div><span class="tr-detail-strike">${k}</span> · Intra ${ivTxt} · OI ${oiTxt}</div>`;
+  }).join('');
+  return `<div class="tr-detail-grid">${cells}</div>`;
+}
+
+function toggleTradeStrikes(i) {
+  const row = document.getElementById('tr-detail-row-' + i);
+  const btn = document.getElementById('tr-strikes-btn-' + i);
+  if (!row) return;
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : '';
+  if (btn) btn.classList.toggle('is-open', !open);
+}
+
+// Tab-separated so a straight paste into Google Sheets/Excel lands each
+// value in its own cell. Includes a header row. Falls back to a manual
+// prompt() copy if the async Clipboard API is unavailable/blocked.
+// Wide-format export: strikes drift up/down through the day (the chain's
+// min/max isn't fixed), so no single row's strike set can be used as the
+// column headers — some rows would be missing columns another row has.
+// Instead we take the UNION of every strike seen across the whole log
+// (separately for intraday and OI, since those chains can differ in
+// range), sort ascending, and give each one 2 columns (Call/Put). Rows
+// that didn't have a given strike at their own save time get blank
+// cells for it — sparse, not guessed/interpolated.
+// Google Sheets treats any pasted cell that CONTAINS "=" as fair game for
+// formula parsing in some paste modes, and always treats a LEADING "="
+// as a formula — so every cell (headers included) gets swept here before
+// going into the TSV. "=" -> "-" keeps values readable without risking a
+// parse error on paste.
+function sanitizeCell(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/=/g, '-');
+}
+
+function copyTradeLog() {
+  if (!tradeLog.length) { alert('No trades recorded yet.'); return; }
+  const headers = ['Future Price','Result','Strategy','Martingale','Magic #','Type','Date','Time','DTE','SD','Expected Distance','Recent IV',
+    'Intraday Calls','Intraday Puts','OI Calls','OI Puts','OI IV Open','Fut Δ','Zone','Zone %'];
+
+  const intraStrikes = Array.from(new Set(tradeLog.flatMap(r => (r.strikesIntra||[]).map(s => s.strike)))).sort((a,b)=>a-b);
+  const oiStrikes    = Array.from(new Set(tradeLog.flatMap(r => (r.strikesOi   ||[]).map(s => s.strike)))).sort((a,b)=>a-b);
+  for (const k of intraStrikes) headers.push(`${k} Call (Intra)`, `${k} Put (Intra)`);
+  for (const k of oiStrikes)    headers.push(`${k} Call (OI)`,    `${k} Put (OI)`);
+
+  const lines = [headers.map(sanitizeCell).join('\t')];
+  for (const r of tradeLog) {
+    const intraMap = new Map((r.strikesIntra||[]).map(s => [s.strike, s]));
+    const oiMap    = new Map((r.strikesOi   ||[]).map(s => [s.strike, s]));
+    const base = [r.future, r.result || '', r.strategy || '', r.martingale || '', r.magic, r.type, r.date, r.time, r.dte, r.sd, r.expDist, r.iv,
+      r.intraCall, r.intraPut, r.oiCall, r.oiPut, r.oiIvOpen, r.futChg, r.zone, r.zonePct];
+    const intraCells = intraStrikes.flatMap(k => { const s = intraMap.get(k); return [s ? s.call : '', s ? s.put : '']; });
+    const oiCells    = oiStrikes.flatMap(k    => { const s = oiMap.get(k);    return [s ? s.call : '', s ? s.put : '']; });
+    lines.push([...base, ...intraCells, ...oiCells].map(sanitizeCell).join('\t'));
+  }
+  const tsv = lines.join('\n');
+
+  const done = () => {
+    const btn = event && event.target;
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied ✓';
+      setTimeout(() => { btn.textContent = orig; }, 1200);
+    }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(tsv).then(done).catch(() => prompt('Copy this into Google Sheets:', tsv));
+  } else {
+    prompt('Copy this into Google Sheets:', tsv);
+  }
 }
 
 /* ================================================================
