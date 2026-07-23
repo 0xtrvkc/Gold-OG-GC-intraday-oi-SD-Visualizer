@@ -1780,7 +1780,7 @@ svg.hist-svg {
           <thead>
             <tr>
               <th>Future Price</th><th>Result</th><th>Strategy</th><th>Martingale</th><th>Magic #</th><th>Type</th><th>Date</th><th>Time</th><th>DTE</th>
-              <th>SD</th><th>Expected Distance</th><th>Recent IV</th>
+              <th>SD</th><th>Mean (μ)</th><th>Expected Distance</th><th>Recent IV</th>
               <th>Intraday Calls</th><th>Intraday Puts</th>
               <th>OI Calls</th><th>OI Puts</th><th>OI IV Open</th>
               <th>Fut Δ</th><th>Zone</th><th>Zone %</th><th>Strikes</th><th></th>
@@ -4338,7 +4338,7 @@ function recordHistoryPoint() {
 /* ================================================================
   TRADE RECORDER
   Minimal manual input: Time + Future Price, plus Save Open / Save Exit.
-  Every other column — DTE, SD, IV, Intraday/OI Calls & Puts, Fut Δ,
+  Every other column — DTE, SD, Mean, IV, Intraday/OI Calls & Puts, Fut Δ,
   sigma zone — is a snapshot of whatever the page is showing at the
   moment you hit save, so an Open row and its Exit row capture the
   market context at each end, not just the price you typed.
@@ -4446,6 +4446,7 @@ function recordTrade(type) {
     future,
     dte:      (liveData && liveData.dte != null) ? String(liveData.dte) : '—',
     sd:       (state.sd > 0) ? state.sd.toFixed(2) : '—',
+    mean:     (state.mean > 0) ? state.mean.toFixed(1) : '—',
     expDist:  trExpectedDistance(),
     iv:       trDomVal('val-vol'),
     intraCall: trDomVal('val-calls'),
@@ -4525,6 +4526,7 @@ function renderTradeLog() {
       <td>${r.time}</td>
       <td>${r.dte}</td>
       <td>${r.sd}</td>
+      <td>${r.mean}</td>
       <td>${r.expDist}</td>
       <td>${r.iv}</td>
       <td>${r.intraCall}</td>
@@ -4538,7 +4540,7 @@ function renderTradeLog() {
       <td><button class="tr-strikes-btn" id="tr-strikes-btn-${i}" onclick="toggleTradeStrikes(${i})">${nStrikes || 0} strikes</button></td>
       <td><button class="tr-del-btn" onclick="deleteTradeRow(${i})" title="Delete row">✕</button></td>
     </tr>
-    <tr class="tr-detail-row" id="tr-detail-row-${i}" style="display:none;"><td colspan="22">${renderTradeStrikeDetail(r)}</td></tr>
+    <tr class="tr-detail-row" id="tr-detail-row-${i}" style="display:none;"><td colspan="23">${renderTradeStrikeDetail(r)}</td></tr>
   `;
   }).join('');
 }
@@ -4614,44 +4616,112 @@ function toggleTradeStrikes(i) {
 // Tab-separated so a straight paste into Google Sheets/Excel lands each
 // value in its own cell. Includes a header row. Falls back to a manual
 // prompt() copy if the async Clipboard API is unavailable/blocked.
-// Wide-format export: strikes drift up/down through the day (the chain's
-// min/max isn't fixed), so no single row's strike set can be used as the
-// column headers — some rows would be missing columns another row has.
-// Instead we take the UNION of every strike seen across the whole log
-// (separately for intraday and OI, since those chains can differ in
-// range), sort ascending, and give each one 2 columns (Call/Put). Rows
-// that didn't have a given strike at their own save time get blank
-// cells for it — sparse, not guessed/interpolated.
-// Google Sheets treats any pasted cell that CONTAINS "=" as fair game for
-// formula parsing in some paste modes, and always treats a LEADING "="
-// as a formula — so every cell (headers included) gets swept here before
-// going into the TSV. "=" -> "-" keeps values readable without risking a
-// parse error on paste.
+//
+// Wide-format export, RELATIVE TO ATM — not absolute strike price.
+// Absolute strike columns (e.g. "3400 Call") only work as a stable schema
+// while the underlying stays near the same price level. Three months
+// later, if GC has moved from ~3400 to ~6000, the union-of-strikes header
+// row would be a completely different set of numbers — old and new
+// exports would never line up in the same spreadsheet, even though both
+// represent "ATM ± a few strikes" in trading terms.
+//
+// Fix: for each row, find that row's own ATM strike (closest strike to
+// the future price at save time) and express every strike as an integer
+// step-offset from it — "ATM", "ATM+1", "ATM-1", etc. That offset is
+// price-level-independent, so the header row (and therefore the
+// spreadsheet schema) stays identical whether GC is at 3400 or 6000.
+// Rows that don't reach a given offset at their own save time still get
+// blank cells for it — sparse, not guessed/interpolated, same as before.
 function sanitizeCell(v) {
   if (v === null || v === undefined) return '';
   return String(v).replace(/=/g, '-');
 }
 
+// Most common gap between consecutive sorted strikes, pooled across every
+// row's strike list. Using the mode (not just the first-seen gap) is
+// robust to any one row having a missing strike or a wider/thinner slice
+// of the chain than another.
+function computeStrikeStep(strikeArrays) {
+  const freq = new Map();
+  for (const arr of strikeArrays) {
+    const sorted = Array.from(new Set(arr)).sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      const d = sorted[i] - sorted[i - 1];
+      if (d > 0) freq.set(d, (freq.get(d) || 0) + 1);
+    }
+  }
+  let best = null, bestCount = 0;
+  for (const [d, c] of freq) if (c > bestCount) { best = d; bestCount = c; }
+  return best; // null if fewer than 2 distinct strikes were ever seen
+}
+
+function nearestStrikeTo(strikes, target) {
+  let best = null, bestDiff = Infinity;
+  for (const k of strikes) {
+    const diff = Math.abs(k - target);
+    if (diff < bestDiff) { bestDiff = diff; best = k; }
+  }
+  return best;
+}
+
+// Maps each strike object to its integer offset from atmStrike (in units
+// of `step`), e.g. atm-1 step below ATM -> -1. Collisions (shouldn't
+// normally happen) keep the first value seen.
+function relativeStrikeMap(strikeObjs, atmStrike, step) {
+  const map = new Map();
+  if (!step) return map;
+  for (const s of strikeObjs) {
+    const offset = Math.round((s.strike - atmStrike) / step);
+    if (!map.has(offset)) map.set(offset, s);
+  }
+  return map;
+}
+
+function offsetLabel(offset) {
+  if (offset === 0) return 'ATM';
+  return offset > 0 ? `ATM+${offset}` : `ATM${offset}`; // negative already carries its own "-"
+}
+
 function copyTradeLog() {
   if (!tradeLog.length) { alert('No trades recorded yet.'); return; }
-  const headers = ['Future Price','Result','Strategy','Martingale','Magic #','Type','Date','Time','DTE','SD','Expected Distance','Recent IV',
+  const headers = ['Future Price','Result','Strategy','Martingale','Magic #','Type','Date','Time','DTE','SD','Mean (μ)','Expected Distance','Recent IV',
     'Intraday Calls','Intraday Puts','OI Calls','OI Puts','OI IV Open','Fut Δ','Zone','Zone %'];
 
-  const intraStrikes = Array.from(new Set(tradeLog.flatMap(r => (r.strikesIntra||[]).map(s => s.strike)))).sort((a,b)=>a-b);
-  const oiStrikes    = Array.from(new Set(tradeLog.flatMap(r => (r.strikesOi   ||[]).map(s => s.strike)))).sort((a,b)=>a-b);
-  for (const k of intraStrikes) headers.push(`${k} Call (Intra)`, `${k} Put (Intra)`);
-  for (const k of oiStrikes)    headers.push(`${k} Call (OI)`,    `${k} Put (OI)`);
+  // Intraday and OI chains can use different strike spacing, so resolve
+  // each step independently across the whole log.
+  const intraStep = computeStrikeStep(tradeLog.map(r => (r.strikesIntra || []).map(s => s.strike)));
+  const oiStep    = computeStrikeStep(tradeLog.map(r => (r.strikesOi    || []).map(s => s.strike)));
+
+  // Per-row offset maps, keyed by that row's OWN atm (not a global one —
+  // atm legitimately differs row to row as the future price moves).
+  const rowIntraOffsets = tradeLog.map(r => {
+    const strikes = (r.strikesIntra || []).map(s => s.strike);
+    if (!strikes.length || !intraStep) return new Map();
+    const atm = nearestStrikeTo(strikes, parseFloat(r.future));
+    return relativeStrikeMap(r.strikesIntra, atm, intraStep);
+  });
+  const rowOiOffsets = tradeLog.map(r => {
+    const strikes = (r.strikesOi || []).map(s => s.strike);
+    if (!strikes.length || !oiStep) return new Map();
+    const atm = nearestStrikeTo(strikes, parseFloat(r.future));
+    return relativeStrikeMap(r.strikesOi, atm, oiStep);
+  });
+
+  const intraOffsetsSeen = Array.from(new Set(rowIntraOffsets.flatMap(m => Array.from(m.keys())))).sort((a, b) => a - b);
+  const oiOffsetsSeen    = Array.from(new Set(rowOiOffsets.flatMap(m => Array.from(m.keys())))).sort((a, b) => a - b);
+  for (const off of intraOffsetsSeen) headers.push(`${offsetLabel(off)} Call (Intra)`, `${offsetLabel(off)} Put (Intra)`);
+  for (const off of oiOffsetsSeen)    headers.push(`${offsetLabel(off)} Call (OI)`,    `${offsetLabel(off)} Put (OI)`);
 
   const lines = [headers.map(sanitizeCell).join('\t')];
-  for (const r of tradeLog) {
-    const intraMap = new Map((r.strikesIntra||[]).map(s => [s.strike, s]));
-    const oiMap    = new Map((r.strikesOi   ||[]).map(s => [s.strike, s]));
-    const base = [r.future, r.result || '', r.strategy || '', r.martingale || '', r.magic, r.type, r.date, r.time, r.dte, r.sd, r.expDist, r.iv,
+  tradeLog.forEach((r, idx) => {
+    const intraMap = rowIntraOffsets[idx];
+    const oiMap    = rowOiOffsets[idx];
+    const base = [r.future, r.result || '', r.strategy || '', r.martingale || '', r.magic, r.type, r.date, r.time, r.dte, r.sd, r.mean, r.expDist, r.iv,
       r.intraCall, r.intraPut, r.oiCall, r.oiPut, r.oiIvOpen, r.futChg, r.zone, r.zonePct];
-    const intraCells = intraStrikes.flatMap(k => { const s = intraMap.get(k); return [s ? s.call : '', s ? s.put : '']; });
-    const oiCells    = oiStrikes.flatMap(k    => { const s = oiMap.get(k);    return [s ? s.call : '', s ? s.put : '']; });
+    const intraCells = intraOffsetsSeen.flatMap(off => { const s = intraMap.get(off); return [s ? s.call : '', s ? s.put : '']; });
+    const oiCells    = oiOffsetsSeen.flatMap(off    => { const s = oiMap.get(off);    return [s ? s.call : '', s ? s.put : '']; });
     lines.push([...base, ...intraCells, ...oiCells].map(sanitizeCell).join('\t'));
-  }
+  });
   const tsv = lines.join('\n');
 
   const done = () => {
