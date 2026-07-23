@@ -1,5 +1,6 @@
-# SD Visualizer · GC Intraday https://0xtrvkc.github.io/Gold-OG-GC-intraday-oi-SD-Visualizer/
+# SD Visualizer · GC Intraday 
 
+https://0xtrvkc.github.io/Gold-OG-GC-intraday-oi-SD-Visualizer/
 A single-file, client-side dashboard for watching Gold Futures (GC) options flow through the trading day — intraday volume and open interest by strike, plotted against a normal-distribution ±3σ price curve, with session history, a DTE low-IV ladder, and a manual trade recorder.
 
 No build step, no backend required. It's one `index.html` — open it in a browser or serve it as a static page (e.g. GitHub Pages).
