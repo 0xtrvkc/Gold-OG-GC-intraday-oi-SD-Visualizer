@@ -4133,6 +4133,34 @@ function recordHistoryPoint() {
 ================================================================ */
 const HCFG = { W: 800, H: 260, PAD_L: 46, PAD_R: 14, PAD_T: 16, PAD_B: 10 };
 
+// Best practice: don't let a straight line silently paper over a real gap
+// in the data. If two consecutive plotted points for a series are farther
+// apart in time than this, draw them as separate segments (a visible break)
+// instead of one continuous line — a wide gap connected by a straight line
+// looks exactly like a dramatic spike/cliff even when the truth is just
+// "no data for a while."
+const HIST_GAP_MS = 15 * 60 * 1000; // 15 minutes
+
+// Splits a sorted list of gcfHistory indices into segments wherever the time
+// gap between consecutive points exceeds HIST_GAP_MS. Used by every line
+// renderer below so gaps render as breaks, not interpolated spikes.
+function splitByGap(idxs) {
+  const segments = [];
+  let seg = [];
+  let prevT = null;
+  for (const i of idxs) {
+    const t = gcfHistory[i].t;
+    if (prevT != null && (t - prevT) > HIST_GAP_MS) {
+      segments.push(seg);
+      seg = [];
+    }
+    seg.push(i);
+    prevT = t;
+  }
+  if (seg.length) segments.push(seg);
+  return segments;
+}
+
 // Returns the fixed day window: 01:00 local today → 01:00 local tomorrow.
 // All history point timestamps map into this 24-hour span.
 function dayWindow() {
@@ -4199,15 +4227,20 @@ function drawHistGrid(gridGroupId, L, fmtVal) {
 // dashed: true draws a dashed stroke — used to tell an OI series apart from its
 // same-colored Intraday counterpart when both share one combined chart.
 function drawHistSeries(g, L, points, idxs, color, width, dashed) {
-  const pts = idxs.map(i => `${L.toX(gcfHistory[i].t)},${L.toY(points[i])}`);
-  if (pts.length < 2) {
-    if (pts.length === 1) {
-      const i = idxs[0];
-      g.appendChild(el('circle',{cx:L.toX(gcfHistory[i].t),cy:L.toY(points[i]),r:'2.5',fill:color}));
+  // Draw one polyline per gap-free segment rather than one line across the
+  // whole series — a long stretch with no real data shouldn't be rendered
+  // as a straight (and often wildly misleading) line to the next real point.
+  for (const seg of splitByGap(idxs)) {
+    if (seg.length < 2) {
+      if (seg.length === 1) {
+        const i = seg[0];
+        g.appendChild(el('circle',{cx:L.toX(gcfHistory[i].t),cy:L.toY(points[i]),r:'2.5',fill:color}));
+      }
+      continue;
     }
-    return;
+    const pts = seg.map(i => `${L.toX(gcfHistory[i].t)},${L.toY(points[i])}`);
+    g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:color,'stroke-width':width||'1.5','stroke-linejoin':'round','stroke-linecap':'round','stroke-dasharray': dashed ? '5,3' : 'none'}));
   }
-  g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:color,'stroke-width':width||'1.5','stroke-linejoin':'round','stroke-linecap':'round','stroke-dasharray': dashed ? '5,3' : 'none'}));
 }
 
 // Builds a "step-after" staircase path: flat while the value holds, a sharp
@@ -4368,19 +4401,26 @@ function renderCombinedHistChart() {
   if (volRng && volIdxs.length) {
     const valByIdx = {}; volIdxs.forEach((i,k)=>valByIdx[i]=volVals[k]);
     if (histSeriesVisible.vol) {
-      const pts = volIdxs.map(i => [L.toX(gcfHistory[i].t), L.toY(normalize(valByIdx[i], volRng))]);
-      if (pts.length >= 2) {
-        const fillUrl = makeAreaGradient('hc-defs', 'hc-grad', volColor);
-        let areaD = `M${pts[0][0]},${L.pB} L${pts[0][0]},${pts[0][1]}`;
-        for (let k = 1; k < pts.length; k++) areaD += ` L${pts[k][0]},${pts[k][1]}`;
-        areaD += ` L${pts[pts.length-1][0]},${L.pB} Z`;
-        areaG.appendChild(el('path', { d: areaD, fill: fillUrl, stroke: 'none' }));
-        const linePts = pts.map(p => `${p[0]},${p[1]}`).join(' ');
-        lineG.appendChild(el('polyline', { points: linePts, fill:'none', stroke:volColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
-        endpointDots(pts, volColor);
-      } else {
-        lineG.appendChild(el('circle', { cx: pts[0][0], cy: pts[0][1], r:'2.5', fill:volColor }));
+      const fillUrl = makeAreaGradient('hc-defs', 'hc-grad', volColor);
+      // Same gap-aware segmenting as drawHistSeries: each contiguous run of
+      // real points gets its own area+line; a long gap breaks instead of
+      // interpolating a straight-line guess across it.
+      let lastPts = null;
+      for (const seg of splitByGap(volIdxs)) {
+        const pts = seg.map(i => [L.toX(gcfHistory[i].t), L.toY(normalize(valByIdx[i], volRng))]);
+        if (pts.length >= 2) {
+          let areaD = `M${pts[0][0]},${L.pB} L${pts[0][0]},${pts[0][1]}`;
+          for (let k = 1; k < pts.length; k++) areaD += ` L${pts[k][0]},${pts[k][1]}`;
+          areaD += ` L${pts[pts.length-1][0]},${L.pB} Z`;
+          areaG.appendChild(el('path', { d: areaD, fill: fillUrl, stroke: 'none' }));
+          const linePts = pts.map(p => `${p[0]},${p[1]}`).join(' ');
+          lineG.appendChild(el('polyline', { points: linePts, fill:'none', stroke:volColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+        } else if (pts.length === 1) {
+          lineG.appendChild(el('circle', { cx: pts[0][0], cy: pts[0][1], r:'2.5', fill:volColor }));
+        }
+        if (pts.length) lastPts = pts;
       }
+      if (lastPts) endpointDots(lastPts, volColor);
       hitSeries.push({ key:'vol', label:'Recent IV', color:volColor, valByIdx, fmt: v => v.toFixed(2)+'%' });
     }
     const legVal = document.getElementById('leg-hc-vol');
@@ -5135,6 +5175,52 @@ function scheduleSnaplogPoll() {
   required. It fetches its own copy of the db (independent from the
   snaplog poller) to keep the two features decoupled.
 ================================================================ */
+// Best practice: the public db is an *untrusted upstream*, not ground
+// truth — a single bad collector snapshot (contract/strike rollover,
+// partial write, retry glitch) can swing a field by 2x between two
+// 5-minute rows with no real-world move behind it (this has actually
+// happened: call_oi/put_oi roughly halved and bounced back within one
+// 5-min window on 2026-07-22). Live ticks recorded by this browser via
+// recordHistoryPoint() come straight from the page's own fetch and are
+// trusted as-is; db-backfilled rows are checked against the last
+// *accepted* value for each field and any field that jumps more than its
+// threshold is dropped (treated as a gap, not plotted) rather than either
+// kept verbatim or silently smoothed over.
+const OUTLIER_MAX_JUMP_PCT = { vol: 0.5, intraCall: 0.6, intraPut: 0.6, oiCall: 0.5, oiPut: 0.5 };
+
+// points: db rows sorted ascending by t. seedFrom: existing gcfHistory
+// (already time-ordered) — the "last accepted" baseline starts from
+// whatever the browser already trusts (if anything), so even the very
+// first db row of a cold, empty-localStorage session gets checked against
+// real prior history rather than being auto-accepted as the baseline.
+function filterOutliers(points, seedFrom) {
+  const lastGood = {};
+  for (const k of Object.keys(OUTLIER_MAX_JUMP_PCT)) {
+    let seed = null;
+    for (let i = seedFrom.length - 1; i >= 0; i--) {
+      if (seedFrom[i][k] != null) { seed = seedFrom[i][k]; break; }
+    }
+    lastGood[k] = seed;
+  }
+  return points.map(p => {
+    const out = { ...p };
+    for (const [k, maxPct] of Object.entries(OUTLIER_MAX_JUMP_PCT)) {
+      const v = out[k];
+      if (v == null) continue;
+      if (lastGood[k] != null && lastGood[k] > 0) {
+        const jump = Math.abs(v - lastGood[k]) / lastGood[k];
+        if (jump > maxPct) {
+          console.warn(`[history] rejected outlier ${k}=${v} (prev ${lastGood[k]}, ${(jump*100).toFixed(0)}% jump) at ${new Date(out.t).toISOString()}`);
+          out[k] = null; // dropped, not plotted — renders as a gap (see HIST_GAP_MS / splitByGap)
+          continue;      // compare the *next* row to the last accepted value, not this rejected one
+        }
+      }
+      lastGood[k] = v;
+    }
+    return out;
+  });
+}
+
 async function loadHistoryFromDb(retriesLeft = 10) {
   try {
     if (typeof initSqlJs === 'undefined') {
@@ -5201,6 +5287,13 @@ async function loadHistoryFromDb(retriesLeft = 10) {
       }
 
       if (dbPoints.length) {
+        // Reject implausible rows before they ever touch gcfHistory — see
+        // filterOutliers() above. gcfHistory is already time-sorted, so it's
+        // a valid seed for "last accepted value" even on a cold, empty
+        // session (seed is just null for every field, so the first db row
+        // always gets in — nothing to compare it against yet).
+        const cleanPoints = filterOutliers(dbPoints, gcfHistory);
+
         // Upsert by timestamp rather than replacing the array outright. This
         // function is called both once at boot and again on a slow repeating
         // timer (see BOOT below) to self-heal from a slow/partial first load
@@ -5209,7 +5302,7 @@ async function loadHistoryFromDb(retriesLeft = 10) {
         // already showing and just updates in place when better data shows
         // up, instead of ever going blank mid-refresh.
         const byT = new Map(gcfHistory.map(p => [p.t, p]));
-        for (const dp of dbPoints) {
+        for (const dp of cleanPoints) {
           const existing = byT.get(dp.t);
           if (!existing) { byT.set(dp.t, dp); continue; }
           const merged = { ...existing };
