@@ -4636,11 +4636,27 @@ function buildHistHitzones(groupId, hoverGroupId, L, idxs, seriesDefs) {
   if (!idxs.length) return;
   const tooltip = document.getElementById('hist-tooltip');
 
+  // Small fixed reach used on either side of a point when its real neighbor
+  // is farther away than HIST_GAP_MS — i.e. the line there is drawn as a
+  // visible break. Without this, the hit-zone still spanned halfway to that
+  // distant neighbor, so hovering in what looks like empty space would snap
+  // the tooltip/crosshair to a point far off in time — the "glitch on
+  // hover" this fixes. Points within a normal gap keep the old behavior
+  // (hit-zone reaching halfway to the real neighbor).
+  const HOVER_SNAP_PX = 6;
+
   idxs.forEach((i, k) => {
     const cx = L.toX(gcfHistory[i].t);
-    // Width: half-gap to adjacent points on each side (capped at a sensible min/max)
-    const prevX = k > 0            ? L.toX(gcfHistory[idxs[k-1]].t) : L.pL;
-    const nextX = k < idxs.length-1 ? L.toX(gcfHistory[idxs[k+1]].t) : L.pR;
+    const isFirst = k === 0;
+    const isLast  = k === idxs.length - 1;
+    const prevWithinGap = !isFirst && (gcfHistory[i].t - gcfHistory[idxs[k-1]].t) <= HIST_GAP_MS;
+    const nextWithinGap = !isLast  && (gcfHistory[idxs[k+1]].t - gcfHistory[i].t) <= HIST_GAP_MS;
+    // Width: half-gap to adjacent points on each side (capped at a sensible min/max).
+    // At the real edges of the data (first/last point) still reach to the axis
+    // edge, same as before; only a genuine mid-series gap gets shrunk to a
+    // small fixed reach so hovering in the visible break doesn't snap far away.
+    const prevX = isFirst ? L.pL : (prevWithinGap ? L.toX(gcfHistory[idxs[k-1]].t) : cx - HOVER_SNAP_PX * 2);
+    const nextX = isLast  ? L.pR : (nextWithinGap ? L.toX(gcfHistory[idxs[k+1]].t) : cx + HOVER_SNAP_PX * 2);
     const halfW = Math.min(Math.max((nextX - prevX) / 2, 3), 40);
 
     const rect = el('rect', {
