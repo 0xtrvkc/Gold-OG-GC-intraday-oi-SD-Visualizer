@@ -1031,6 +1031,40 @@ footer {
 }
 .tr-field select { width: 170px; }
 .tr-field input:focus, .tr-field select:focus { outline: none; border-color: var(--fg2); }
+.tr-field input[type="time"] { width: 108px; }
+.tr-time-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tr-time-clear {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.tr-time-clear:hover { color: var(--fg1); text-decoration: underline; }
+.tr-time-status {
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--fg3);
+  align-self: center;
+  max-width: 220px;
+}
+.tr-time-status.is-warn { color: var(--danger); }
+.tr-time-status.is-matched { color: var(--fg2); }
+.tr-time-tag {
+  color: var(--fg3);
+  font-weight: 700;
+  margin-left: 2px;
+  cursor: help;
+}
 .tr-btn-open  { border-color: var(--oi-call); color: var(--oi-call); }
 .tr-btn-open:hover  { background: var(--oi-call-fill); }
 .tr-btn-exit  { border-color: var(--oi-put); color: var(--oi-put); }
@@ -1080,6 +1114,7 @@ footer {
   padding: 2px 4px;
 }
 .tr-del-btn:hover { color: var(--danger); }
+.tr-del-cell { padding-left: 12px !important; width: 1%; white-space: nowrap; }
 .tr-empty {
   padding: 14px 4px;
   font-size: 11px;
@@ -1762,12 +1797,20 @@ svg.hist-svg {
 
     <div class="tr-box">
       <div class="tr-input-row">
+        <div class="tr-field" id="tr-time-wrap">
+          <span class="tr-time-label-row">
+            <label for="tr-time-input">At Time</label>
+            <button type="button" class="tr-time-clear" id="tr-time-clear-btn" onclick="clearTrTime()" style="display:none;">Use Live ✕</button>
+          </span>
+          <input type="time" id="tr-time-input" step="60" oninput="onTrTimeInput()">
+        </div>
         <div class="tr-field" id="tr-magic-wrap" style="display:none;">
           <label for="tr-magic-select">Closing</label>
           <select id="tr-magic-select"></select>
         </div>
         <button class="btn tr-btn-open" onclick="recordTrade('OPEN')">Save Open</button>
         <button class="btn tr-btn-exit" onclick="recordTrade('EXIT')">Save Exit</button>
+        <span class="tr-time-status" id="tr-time-status"></span>
       </div>
 
       <div class="tr-table-actions">
@@ -1779,16 +1822,16 @@ svg.hist-svg {
         <table class="tr-table" id="tr-table" style="display:none;">
           <thead>
             <tr>
-              <th>Future Price</th><th>Result</th><th>Strategy</th><th>Martingale</th><th>Magic #</th><th>Type</th><th>Date</th><th>Time</th><th>DTE</th>
+              <th></th><th>Future Price</th><th>Result</th><th>Strategy</th><th>Martingale</th><th>Magic #</th><th>Type</th><th>Date</th><th>Time</th><th>DTE</th>
               <th>SD</th><th>Mean (μ)</th><th>Expected Distance</th><th>Recent IV</th>
               <th>Intraday Calls</th><th>Intraday Puts</th>
               <th>OI Calls</th><th>OI Puts</th><th>OI IV Open</th>
-              <th>Fut Δ</th><th>Zone</th><th>Zone %</th><th>Strikes</th><th></th>
+              <th>Fut Δ</th><th>Zone</th><th>Zone %</th><th>Strikes</th>
             </tr>
           </thead>
           <tbody id="tr-tbody"></tbody>
         </table>
-        <div class="tr-empty" id="tr-empty">No trades recorded yet — hit Save Open / Save Exit to log a row (future price is captured automatically; edit it in the table if it needs correcting).</div>
+        <div class="tr-empty" id="tr-empty">No trades recorded yet — hit Save Open / Save Exit to log a row (future price is captured automatically; edit it in the table if it needs correcting). Set "At Time" to back-date a row to the closest available snapshot instead of now.</div>
       </div>
     </div>
   </div>
@@ -3255,6 +3298,7 @@ async function loadBigChartSnapshots() {
     bigSnapsLoading = false;
     updateChartScrubUI();
     if (bigCutoffT != null) refreshBigChartTarget(220, false);
+    if (trTimeMinutes != null) trUpdateTimeStatus(); // Trade Recorder At-Time field may be waiting on this same load
   }
 }
 
@@ -4384,6 +4428,136 @@ function trExpectedDistance() {
   return ((ivDec / 16) * mean).toFixed(1);
 }
 
+/* ── AT-TIME BACKFILL ─────────────────────────────────────────────────────
+   Optional "At Time" field: pick a past clock time today and Save Open/Exit
+   captures the *closest available historical snapshot* instead of "now".
+
+   Reuses the Big Chart Playback machinery (bigIntradaySnaps/bigOiSnaps,
+   loaded once via loadBigChartSnapshots()) as its data source — the exact
+   per-strike {future, futChg, dte, callTotal, putTotal, vol, rows} shape
+   liveData/oiData already use, reconstructed from the same public
+   itd-oi-db this page already reads for Session History / DTE Ladder.
+   No new network requests: this only reads snapshot arrays that are
+   already fetched-once-and-cached in memory for the scrubber, so adding
+   this feature doesn't increase load against raw.githubusercontent.com
+   at all.
+
+   sd / mean / Expected Distance / OI IV Open are deliberately NOT
+   re-derived per historical snapshot: they're day-level constants once
+   oiIvOpen locks in (see resolveExpectedDistanceIv()'s priority chain —
+   manual override > locked oiIvOpen > live fallback), not something that
+   ticks per-fetch, so today's current value IS the historical value for
+   effectively the whole session. Zone / Zone % *do* depend on the
+   snapshot's future price, so those are recomputed per snapshot via
+   computeSigmaZone() (same formula as updateGauge(), kept in sync
+   manually since updateGauge also drives DOM/band-highlight side effects
+   this doesn't need).
+──────────────────────────────────────────────────────────────────────── */
+let trTimeMinutes = null; // null = live ("now"); else minutes since dayWindow().tStart
+const TR_TIME_MATCH_TOLERANCE_MS = 6 * 60 * 1000; // ~2x the collector's 5-min rewrite cadence; beyond this, warn rather than silently using a stale match
+
+// "HH:MM" -> minutes since today's 01:00 local anchor (same convention as
+// histNowMinutes()/dayWindow()). 00:00–00:59 belongs to the *next*
+// calendar date within the 01:00→01:00 trading-day window, so it wraps
+// to the far end of the window rather than reading as "yesterday".
+function trParseTimeToMinutes(hhmm) {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm || '');
+  if (!m) return null;
+  const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+  let mins = (h - 1) * 60 + mi;
+  if (mins < 0) mins += 1440;
+  return mins;
+}
+
+// Like findSnapAtOrBefore (used by the scrubber, which always wants the
+// latest snapshot at-or-before a timeline position), but for backfilling a
+// trade we want whichever neighbor — before OR after — is actually closer
+// in time to the picked clock time.
+function findNearestSnap(snaps, t) {
+  if (!snaps.length) return null;
+  if (t <= snaps[0].t) return snaps[0];
+  if (t >= snaps[snaps.length - 1].t) return snaps[snaps.length - 1];
+  let lo = 0, hi = snaps.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (snaps[mid].t < t) lo = mid + 1; else hi = mid;
+  }
+  const after = snaps[lo], before = snaps[lo - 1];
+  if (!before) return after;
+  return (t - before.t) <= (after.t - t) ? before : after;
+}
+
+// Same sigma-zone math as updateGauge(), factored out standalone so a
+// historical future price can be evaluated without touching the live
+// gauge DOM/band highlighting. Keep in sync with updateGauge() by hand if
+// that formula ever changes.
+function computeSigmaZone(fx, mean, sdIn) {
+  if (fx == null || !(mean > 0)) return { zoneName: '—', zonePct: '—' };
+  const sd = sdIn > 0 ? sdIn : 75;
+  const sigmaPos = (fx - mean) / sd;
+  const absS = Math.abs(sigmaPos);
+  const floor = Math.floor(absS);
+  const pctIn = Math.round((absS - floor) * 100);
+  const side = sigmaPos >= 0 ? '+' : '−';
+  const zFloor = Math.min(floor, 3);
+  const zCeil = Math.min(floor + 1, 3);
+  if (absS < 0.05) return { zoneName: 'At μ (mean)', zonePct: '' };
+  if (absS <= 3) return { zoneName: `${side}${zFloor}σ → ${side}${zCeil}σ`, zonePct: `${pctIn}% from ${side}${zFloor}σ` };
+  return { zoneName: `Beyond ${side}3σ`, zonePct: `${(absS - 3).toFixed(2)}σ outside` };
+}
+
+// Fired on every keystroke/change of the At-Time input. Clamps to "now"
+// (no picking a future time), lazily kicks off the (singleton, cached)
+// snapshot load if it hasn't run yet, and refreshes the status hint.
+function onTrTimeInput() {
+  const input = document.getElementById('tr-time-input');
+  if (!input || !input.value) { clearTrTime(); return; }
+  let mins = trParseTimeToMinutes(input.value);
+  if (mins == null) return;
+  const nowMin = histNowMinutes();
+  if (mins > nowMin) mins = nowMin;
+  trTimeMinutes = mins;
+  const clearBtn = document.getElementById('tr-time-clear-btn');
+  if (clearBtn) clearBtn.style.display = '';
+  if (!bigSnapsLoaded && !bigSnapsLoading) loadBigChartSnapshots();
+  trUpdateTimeStatus();
+}
+
+function clearTrTime() {
+  trTimeMinutes = null;
+  const input = document.getElementById('tr-time-input');
+  const clearBtn = document.getElementById('tr-time-clear-btn');
+  if (input) input.value = '';
+  if (clearBtn) clearBtn.style.display = 'none';
+  trUpdateTimeStatus();
+}
+
+// Shows what the At-Time picker will actually match against — the closest
+// snapshot's real timestamp and how far off it is — before the user even
+// hits Save, so a bad match is visible up front rather than a surprise in
+// the table afterward.
+function trUpdateTimeStatus() {
+  const el = document.getElementById('tr-time-status');
+  if (!el) return;
+  if (trTimeMinutes == null) { el.textContent = ''; el.className = 'tr-time-status'; return; }
+  if (bigSnapsLoading) { el.textContent = 'Loading historical snapshots…'; el.className = 'tr-time-status'; return; }
+  if (!bigSnapsLoaded || !bigIntradaySnaps.length) { el.textContent = 'No historical data available for today yet.'; el.className = 'tr-time-status is-warn'; return; }
+  const { tStart } = dayWindow();
+  const target = tStart + trTimeMinutes * 60000;
+  const snap = findNearestSnap(bigIntradaySnaps, target);
+  if (!snap) { el.textContent = 'No match found.'; el.className = 'tr-time-status is-warn'; return; }
+  const diffMs = Math.abs(snap.t - target);
+  const timeStr = new Date(snap.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (diffMs > TR_TIME_MATCH_TOLERANCE_MS) {
+    el.textContent = `⚠ closest is ${timeStr} (${Math.round(diffMs / 60000)}m away)`;
+    el.className = 'tr-time-status is-warn';
+  } else {
+    const mins = Math.round(diffMs / 60000);
+    el.textContent = `matches ${timeStr}${mins ? ' (±' + mins + 'm)' : ''}`;
+    el.className = 'tr-time-status is-matched';
+  }
+}
+
 // Derives the list of still-open trades (OPEN rows with no matching EXIT
 // row yet) directly from tradeLog — no separately-maintained state to
 // drift out of sync when rows get deleted.
@@ -4412,13 +4586,53 @@ function trUpdateMagicSelector() {
 }
 
 function recordTrade(type) {
-  // No manual Future Price field anymore — auto-captured from whatever
-  // the page is currently showing as the live future price. If it's off
+  // If "At Time" is set, resolve the closest historical snapshot first —
+  // everything below then reads from that snapshot instead of live state.
+  // See the AT-TIME BACKFILL block above for how matching/tolerance work.
+  const usingPastTime = trTimeMinutes != null;
+  let matchedIntra = null, matchedOi = null, matchDiffMs = 0;
+
+  if (usingPastTime) {
+    if (!bigSnapsLoaded) {
+      alert(bigSnapsLoading
+        ? 'Still loading historical snapshots — try again in a moment.'
+        : "Historical snapshots aren't available right now, so a past time can't be matched. Clear At Time to record live, or try again shortly.");
+      return;
+    }
+    const { tStart } = dayWindow();
+    const targetT = tStart + trTimeMinutes * 60000;
+    matchedIntra = findNearestSnap(bigIntradaySnaps, targetT);
+    matchedOi    = findNearestSnap(bigOiSnaps, targetT);
+    if (!matchedIntra) { alert('No historical data available for today yet.'); return; }
+    matchDiffMs = Math.abs(matchedIntra.t - targetT);
+    if (matchDiffMs > TR_TIME_MATCH_TOLERANCE_MS) {
+      const mins = Math.round(matchDiffMs / 60000);
+      if (!confirm(`Closest snapshot found is ${mins} min from the time you picked. Record this row using that data anyway?`)) return;
+    }
+  }
+
+  // src/oiSrc: the {future, futChg, dte, callTotal, putTotal, vol, rows}
+  // object to read every column below from — either the matched historical
+  // snapshot, or the page's own live liveData/oiData when recording "now".
+  const src   = usingPastTime ? matchedIntra.data : liveData;
+  const oiSrc = usingPastTime ? (matchedOi ? matchedOi.data : null) : oiData;
+
+  // No manual Future Price field anymore — auto-captured from src (live
+  // future price, or the matched historical snapshot's). If it's off
   // (stale tick, etc.) it's corrected afterward via the editable Future
   // Price cell in the table, not re-typed here.
-  const future = (liveData && liveData.future != null) ? String(liveData.future) : '';
-  // Time is always "now" at the moment Save Open/Exit is clicked.
-  const time = new Date().toTimeString().slice(0, 8);
+  const future = (src && src.future != null) ? String(src.future) : '';
+  // Time is "now" at the moment Save Open/Exit is clicked — unless a past
+  // time was selected, in which case it's the matched snapshot's own
+  // actual timestamp (which may differ slightly from what was picked).
+  const recordedAt = usingPastTime ? new Date(matchedIntra.t) : new Date();
+  const time = recordedAt.toTimeString().slice(0, 8);
+
+  const fmt3 = v => v >= 1000000 ? (v / 1000000).toFixed(2) + 'M' : v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toLocaleString();
+  const fmtOiTotal = raw => {
+    const n = parseFloat(String(raw).replace(/,/g, ''));
+    return !isNaN(n) ? fmt3(n) : '—';
+  };
 
   let magic;
   if (type === 'OPEN') {
@@ -4436,34 +4650,49 @@ function recordTrade(type) {
     }
   }
 
+  const zoneCalc = usingPastTime
+    ? computeSigmaZone(src && src.future != null ? src.future : null, state.mean, state.sd)
+    : { zoneName: trDomVal('sdg-zone-name'), zonePct: trDomVal('sdg-zone-pct') };
+
   const row = {
     magic, type,
     result: type === 'EXIT' ? '' : null, // Win/Lose tag, EXIT rows only — set later via the dropdown
     strategy:   type === 'OPEN' ? '' : null, // Mean Reverse / Recovery / Follow Squeeze / After Squeeze — OPEN rows only, set later via the dropdown
     martingale: type === 'OPEN' ? '' : null, // Martingale #1-#4 — OPEN rows only, set later via the dropdown
-    date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD, sheet-friendly
+    date: recordedAt.toLocaleDateString('en-CA'), // YYYY-MM-DD, sheet-friendly
     time,
     future,
-    dte:      (liveData && liveData.dte != null) ? String(liveData.dte) : '—',
+    dte:      (src && src.dte != null) ? String(src.dte) : '—',
+    // sd/mean/expDist/oiIvOpen are day-level constants (see AT-TIME
+    // BACKFILL comment above) — same value whether recording live or
+    // backfilling an earlier time today, so these always read current
+    // state rather than anything snapshot-specific.
     sd:       (state.sd > 0) ? state.sd.toFixed(2) : '—',
     mean:     (state.mean > 0) ? state.mean.toFixed(1) : '—',
     expDist:  trExpectedDistance(),
-    iv:       trDomVal('val-vol'),
-    intraCall: trDomVal('val-calls'),
-    intraPut:  trDomVal('val-puts'),
-    oiCall:    trDomVal('val-oi-calls'),
-    oiPut:     trDomVal('val-oi-puts'),
+    iv:        usingPastTime ? ((src && src.vol && src.vol !== '—') ? src.vol + '%' : '—') : trDomVal('val-vol'),
+    intraCall: usingPastTime ? ((src && src.callTotal) ?? '—') : trDomVal('val-calls'),
+    intraPut:  usingPastTime ? ((src && src.putTotal)  ?? '—') : trDomVal('val-puts'),
+    oiCall:    usingPastTime ? (oiSrc ? fmtOiTotal(oiSrc.callTotal) : '—') : trDomVal('val-oi-calls'),
+    oiPut:     usingPastTime ? (oiSrc ? fmtOiTotal(oiSrc.putTotal)  : '—') : trDomVal('val-oi-puts'),
     oiIvOpen:  trDomVal('val-oi-iv-open'),
-    futChg:    trDomVal('val-futchg'),
-    zone:      trDomVal('sdg-zone-name'),
-    zonePct:   trDomVal('sdg-zone-pct'),
+    futChg:    usingPastTime ? ((src && src.futChg != null) ? String(src.futChg) : '—') : trDomVal('val-futchg'),
+    zone:      zoneCalc.zoneName,
+    zonePct:   zoneCalc.zonePct,
     // Full per-strike snapshot, on top of the totals above — every strike
     // visible in the chain at the moment of save, not just the aggregate.
     // The visible strike range drifts through the day, so this is stored
     // sparse (only the strikes that existed at THIS save) and reconciled
     // into a common column set later, at export time — see copyTradeLog().
-    strikesIntra: (liveData && liveData.rows) ? liveData.rows.map(r => ({ strike: r.strike, call: r.call, put: r.put })) : [],
-    strikesOi:    (oiData   && oiData.rows)   ? oiData.rows.map(r   => ({ strike: r.strike, call: r.call, put: r.put })) : [],
+    strikesIntra: (src   && src.rows)   ? src.rows.map(r   => ({ strike: r.strike, call: r.call, put: r.put })) : [],
+    strikesOi:    (oiSrc && oiSrc.rows) ? oiSrc.rows.map(r => ({ strike: r.strike, call: r.call, put: r.put })) : [],
+    // Flags this row as reconstructed from a past snapshot rather than
+    // captured live "now" — surfaced as a small marker next to Time in
+    // the table (see renderTradeLog) so backfilled rows stay visually
+    // distinguishable, since sd/mean/oiIvOpen above are today's *current*
+    // values rather than anything independently re-derived per snapshot.
+    backfilled:  usingPastTime,
+    matchDiffMs: usingPastTime ? matchDiffMs : 0,
   };
 
   tradeLog.push(row);
@@ -4484,6 +4713,23 @@ function clearTradeLog() {
   renderTradeLog();
   trUpdateMagicSelector();
 }
+
+// Each Open+Exit pair shares a magic number, so coloring by magic groups
+// the two rows of one trade at a glance while keeping unrelated trades
+// visually distinct. HSL so one hue drives both a solid accent stripe and
+// a faint full-row tint without needing separate light/dark palettes —
+// cycles through MAGIC_HUES if there are more magics than hues, which is
+// fine: a repeated hue just reads as "unrelated trade, same color by
+// coincidence" and never gets confused with an actual matching pair,
+// since an Open/Exit pair always land on the exact same index (magic
+// number never changes once minted — see trMagicSeq above).
+const TR_MAGIC_HUES = [210, 38, 150, 355, 268, 178, 28, 200, 320, 95];
+function trMagicHue(magic) {
+  const n = Math.abs(parseInt(magic, 10)) || 0;
+  return TR_MAGIC_HUES[n % TR_MAGIC_HUES.length];
+}
+function trMagicAccentColor(magic) { return `hsl(${trMagicHue(magic)}, 58%, 46%)`; }
+function trMagicRowTint(magic)     { return `hsla(${trMagicHue(magic)}, 60%, 50%, 0.10)`; }
 
 function renderTradeLog() {
   const tbody = document.getElementById('tr-tbody');
@@ -4514,8 +4760,10 @@ function renderTradeLog() {
       : `<span class="tr-result-dash">—</span>`;
     const strategyCell   = r.type === 'OPEN' ? trTagSelect(i, 'strategy',   r.strategy,   TR_STRATEGY_OPTIONS) : `<span class="tr-result-dash">—</span>`;
     const martingaleCell = r.type === 'OPEN' ? trTagSelect(i, 'martingale', r.martingale, TR_MARTINGALE_OPTIONS) : `<span class="tr-result-dash">—</span>`;
+    const accentColor = trMagicAccentColor(r.magic);
     return `
-    <tr class="${r.type === 'OPEN' ? 'tr-row-open' : 'tr-row-exit'}">
+    <tr class="${r.type === 'OPEN' ? 'tr-row-open' : 'tr-row-exit'}" style="background:${trMagicRowTint(r.magic)};">
+      <td class="tr-del-cell" style="box-shadow: inset 3px 0 0 ${accentColor};" title="Magic #${r.magic}"><button class="tr-del-btn" onclick="deleteTradeRow(${i})" title="Delete row">✕</button></td>
       <td class="tr-future">${futureCell}</td>
       <td>${resultCell}</td>
       <td>${strategyCell}</td>
@@ -4523,7 +4771,7 @@ function renderTradeLog() {
       <td class="tr-num">${r.magic}</td>
       <td class="tr-type">${r.type}</td>
       <td>${r.date}</td>
-      <td>${r.time}</td>
+      <td>${r.time}${r.backfilled ? `<span class="tr-time-tag" title="Backfilled from the closest historical snapshot (~${Math.round((r.matchDiffMs||0)/60000)}m away). sd/mean/OI-IV-open reflect today's current values, not a re-derived historical figure.">*</span>` : ''}</td>
       <td>${r.dte}</td>
       <td>${r.sd}</td>
       <td>${r.mean}</td>
@@ -4535,10 +4783,9 @@ function renderTradeLog() {
       <td>${r.oiPut}</td>
       <td>${r.oiIvOpen}</td>
       <td>${r.futChg}</td>
-      <td>${r.zone}</td>
-      <td>${r.zonePct}</td>
+      <td id="tr-zone-${i}">${r.zone}</td>
+      <td id="tr-zonepct-${i}">${r.zonePct}</td>
       <td><button class="tr-strikes-btn" id="tr-strikes-btn-${i}" onclick="toggleTradeStrikes(${i})">${nStrikes || 0} strikes</button></td>
-      <td><button class="tr-del-btn" onclick="deleteTradeRow(${i})" title="Delete row">✕</button></td>
     </tr>
     <tr class="tr-detail-row" id="tr-detail-row-${i}" style="display:none;"><td colspan="23">${renderTradeStrikeDetail(r)}</td></tr>
   `;
@@ -4580,11 +4827,30 @@ function setTradeResult(i, value) {
 }
 
 // Lets a logged Future Price be corrected after the fact (fat-fingered
-// entry, etc.) without touching any other captured column — updates
-// tradeLog in place, no full re-render needed.
+// entry, etc.). Zone/Zone % are the sigma-position readout — the only
+// other columns that are a *function* of Future Price (see AT-TIME
+// BACKFILL / computeSigmaZone) — so those get recomputed in place too.
+// Recomputed against THIS row's own recorded sd/mean (not live state,
+// which may have moved on since this row was saved), so the corrected
+// Zone stays internally consistent with the rest of the row rather than
+// silently picking up whatever sd/mean happen to be showing right now.
+// Every other column is independent of Future Price and is left as-is.
 function setTradeFuture(i, value) {
   if (!tradeLog[i]) return;
-  tradeLog[i].future = value;
+  const row = tradeLog[i];
+  row.future = value;
+
+  const fx   = parseFloat(value);
+  const mean = parseFloat(row.mean);
+  const sd   = parseFloat(row.sd);
+  const z = computeSigmaZone(isNaN(fx) ? null : fx, mean, sd);
+  row.zone = z.zoneName;
+  row.zonePct = z.zonePct;
+
+  const zoneEl    = document.getElementById(`tr-zone-${i}`);
+  const zonePctEl = document.getElementById(`tr-zonepct-${i}`);
+  if (zoneEl)    zoneEl.textContent    = z.zoneName;
+  if (zonePctEl) zonePctEl.textContent = z.zonePct;
 }
 
 // Builds the (initially hidden) per-strike breakdown shown when a row's
