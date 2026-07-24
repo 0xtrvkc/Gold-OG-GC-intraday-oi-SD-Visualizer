@@ -1115,6 +1115,119 @@ footer {
 }
 .tr-del-btn:hover { color: var(--danger); }
 .tr-del-cell { padding-left: 12px !important; width: 1%; white-space: nowrap; }
+
+.tr-help-btn {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid var(--line2);
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tr-help-btn:hover { color: var(--fg0); border-color: var(--fg2); background: var(--bg2); }
+
+.tr-help-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.tr-help-overlay.is-open { display: flex; }
+.tr-help-box {
+  background: var(--bg1);
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 22px 24px 24px;
+  position: relative;
+  font-family: var(--sans);
+  color: var(--fg1);
+}
+.tr-help-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  background: none;
+  border: none;
+  color: var(--fg3);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+}
+.tr-help-close:hover { color: var(--fg0); }
+.tr-help-box h3 {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--fg0);
+  margin: 0 0 4px;
+}
+.tr-help-box .tr-help-sub {
+  font-size: 11px;
+  color: var(--fg3);
+  margin-bottom: 4px;
+}
+.tr-help-box h4 {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  margin: 18px 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.tr-help-box h4:first-of-type { border-top: none; padding-top: 0; margin-top: 18px; }
+.tr-help-box p, .tr-help-box li {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--fg1);
+}
+.tr-help-box ul { padding-left: 18px; margin: 4px 0; }
+.tr-help-box code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 1px 5px;
+  color: var(--fg0);
+}
+.tr-help-atm-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+.tr-help-atm-table th, .tr-help-atm-table td {
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: center;
+}
+.tr-help-atm-table th { color: var(--fg3); font-weight: 500; background: var(--bg2); }
+.tr-help-atm-table td.tr-help-atm-hl { color: var(--fg0); font-weight: 600; }
+.tr-help-swatch {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
 .tr-empty {
   padding: 14px 4px;
   font-size: 11px;
@@ -1793,7 +1906,9 @@ svg.hist-svg {
        per-strike columns are reconciled across a strike range that drifts
        through the day. See recordTrade(). -->
   <div class="hist-section" id="trade-recorder-section">
-    <div class="hist-section-title">Trade Recorder <span class="dte-ladder-meta" id="tr-meta">0 entries</span></div>
+    <div class="hist-section-title">Trade Recorder <span class="dte-ladder-meta" id="tr-meta">0 entries</span>
+      <button type="button" class="tr-help-btn" onclick="openTrHelp()" title="How to use the Trade Recorder">? How to Use</button>
+    </div>
 
     <div class="tr-box">
       <div class="tr-input-row">
@@ -1833,6 +1948,56 @@ svg.hist-svg {
         </table>
         <div class="tr-empty" id="tr-empty">No trades recorded yet — hit Save Open / Save Exit to log a row (future price is captured automatically; edit it in the table if it needs correcting). Set "At Time" to back-date a row to the closest available snapshot instead of now.</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Trade Recorder How-to-Use modal. Plain overlay + centered box, no
+       framework — see openTrHelp()/closeTrHelp(). Content is static HTML,
+       not generated, so it's easy to keep in sync by hand when the
+       recorder's behavior changes. -->
+  <div class="tr-help-overlay" id="tr-help-overlay" onclick="if(event.target===this) closeTrHelp()">
+    <div class="tr-help-box">
+      <button type="button" class="tr-help-close" onclick="closeTrHelp()" title="Close">✕</button>
+      <h3>Trade Recorder — How to Use</h3>
+      <div class="tr-help-sub">In-memory log of your trades, captured straight from live (or historical) chain data. Clears on refresh.</div>
+
+      <h4>Saving a trade</h4>
+      <p><strong>Save Open</strong> and <strong>Save Exit</strong> each log a row using whatever the page is currently showing: future price, DTE, SD/Mean, Recent IV, Intraday & OI Call/Put totals, Fut Δ, Zone, and the full per-strike chain — all captured automatically, nothing to type.</p>
+      <p>Every Open you save gets a new <strong>Magic #</strong>. Its matching Exit reuses that same number, so the two rows of one trade are always linked — and are highlighted with the <em>same color</em> in the table (see Color coding below).</p>
+      <p>After saving, use the row's dropdowns to tag <strong>Result</strong> (Win/Lose, Exit rows) and <strong>Strategy</strong> / <strong>Martingale</strong> (Open rows).</p>
+
+      <h4>At Time — backfilling a past trade</h4>
+      <p>Forgot to hit Save at the time? Set <strong>At Time</strong> to a past clock time today before clicking Save Open/Exit, and the row is filled in from the <em>closest available historical snapshot</em> instead of "now" — same columns, same fidelity.</p>
+      <ul>
+        <li>A status hint shows which real timestamp it'll match and how far off it is, e.g. <code>matches 10:24 (±2m)</code>.</li>
+        <li>If the closest snapshot is more than ~6 minutes away, you'll be asked to confirm before it records anyway.</li>
+        <li>Backfilled rows get a small <code>*</code> next to their Time — hover it for details.</li>
+        <li>SD / Mean / Expected Distance / OI IV Open are <em>not</em> re-derived per snapshot — they're day-level constants that lock in near market open, so today's current value already is the historical value for essentially the whole session.</li>
+        <li>Clear the field (<strong>Use Live ✕</strong>) to go back to recording "now".</li>
+      </ul>
+
+      <h4>Editing Future Price</h4>
+      <p>Future Price is editable after the fact — click it and correct it if the auto-captured tick was off. <strong>Zone</strong> and <strong>Zone %</strong> automatically recompute against the edit (they're the only other columns that are actually a function of Future Price); every other column is independent and stays as originally recorded.</p>
+
+      <h4>Color coding</h4>
+      <p><span class="tr-help-swatch" style="background:hsl(210,58%,46%)"></span>Each row gets an accent stripe + faint tint based on its Magic #. An Open and its Exit always land on the exact same color, so a trade's two rows are easy to spot as a pair even after sorting through a long log. Unrelated trades will (almost always) land on a different hue.</p>
+
+      <h4>Copy for Sheets — what "ATM" means</h4>
+      <p>The <strong>Copy for Sheets</strong> button exports the log as tab-separated rows, ready to paste into Google Sheets. Per-strike columns are labeled relative to each row's own <strong>ATM</strong> (at-the-money strike) rather than an absolute strike price — so the header row stays identical no matter what price level the underlying was at when a trade happened.</p>
+      <p>For each row: <strong>ATM</strong> = whichever listed strike is closest to that row's Future Price. <strong>ATM+1</strong> = the next strike up (ATM + one strike-step), <strong>ATM+2</strong> = two steps up, and so on; <strong>ATM−1</strong> works the same going down. The strike step is auto-detected from your own strike chain (e.g. 25-point spacing).</p>
+      <p>Example, assuming a 25-point strike chain (…3950, 3975, 4000, 4025, 4050, 4075…):</p>
+      <table class="tr-help-atm-table">
+        <thead><tr><th>Future Price</th><th>ATM</th><th>ATM+1</th><th>ATM+2</th><th>ATM+3</th><th>ATM−1</th></tr></thead>
+        <tbody>
+          <tr><td>4000</td><td class="tr-help-atm-hl">4000</td><td>4025</td><td>4050</td><td>4075</td><td>3975</td></tr>
+          <tr><td>4025</td><td class="tr-help-atm-hl">4025</td><td>4050</td><td>4075</td><td>4100</td><td>4000</td></tr>
+          <tr><td>4012.5</td><td class="tr-help-atm-hl">4000</td><td>4025</td><td>4050</td><td>4075</td><td>3975</td></tr>
+        </tbody>
+      </table>
+      <p>4012.5 sits exactly halfway between the 4000 and 4025 strikes — an exact tie rounds down, so it resolves to the same ATM (4000) as the plain 4000 case, and therefore the same ATM+1/+2/+3 columns too.</p>
+
+      <h4>Clear</h4>
+      <p>Wipes every logged row. There's no undo — the log only lives in memory for this session, so make sure you've copied anything you need first.</p>
     </div>
   </div>
 
@@ -4730,6 +4895,18 @@ function trMagicHue(magic) {
 }
 function trMagicAccentColor(magic) { return `hsl(${trMagicHue(magic)}, 58%, 46%)`; }
 function trMagicRowTint(magic)     { return `hsla(${trMagicHue(magic)}, 60%, 50%, 0.10)`; }
+
+function openTrHelp() {
+  const el = document.getElementById('tr-help-overlay');
+  if (el) el.classList.add('is-open');
+}
+function closeTrHelp() {
+  const el = document.getElementById('tr-help-overlay');
+  if (el) el.classList.remove('is-open');
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeTrHelp();
+});
 
 function renderTradeLog() {
   const tbody = document.getElementById('tr-tbody');
