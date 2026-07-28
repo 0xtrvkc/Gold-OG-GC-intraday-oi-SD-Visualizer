@@ -2513,6 +2513,11 @@ function drawVolCurve(c, rows) {
   g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:tc('#9a9080','#707070'),'stroke-width':'1','stroke-linejoin':'round','stroke-linecap':'round'}));
   const fmtV = v=>(v*100).toFixed(1)+'%';
   const labeledStrikes = new Set();
+  const placed = []; // bounding boxes of labels already drawn, for collision checks
+  const LABEL_W = 22, LABEL_H = 9; // approx text box size at font-size 7
+  function overlaps(x,y,w) {
+    return placed.some(p => Math.abs(p.x-x) < (w+p.w)/2 && Math.abs(p.y-y) < LABEL_H);
+  }
   // The μ line/label (drawMarkers) sits at the mean's x position — find the
   // visible strike closest to it so its IV label can dodge sideways instead
   // of sitting right on top of the vertical mean line.
@@ -2523,15 +2528,19 @@ function drawVolCurve(c, rows) {
     if (labeledStrikes.has(row.strike)) return;
     labeledStrikes.add(row.strike);
     const isAtMean = row.strike === meanStrike;
-    const attrs = {
-      x:c.toSvgX(row.strike) + (isAtMean ? 12 : 0),
-      y:toVolY(row.vol)-4,
-      'text-anchor': isAtMean ? 'start' : 'middle',
-      'font-size':'7','font-family':'IBM Plex Mono,monospace',
-      fill:tc('#9a9080','#707070'),opacity:'0.9'
-    };
-    const t=el('text',attrs);
+    let x = c.toSvgX(row.strike) + (isAtMean ? 12 : 0);
+    let y = toVolY(row.vol) - 4;
+    const anchor = isAtMean ? 'start' : 'middle';
+    const w = isAtMean ? LABEL_W*2 : LABEL_W; // 'start' anchor box extends rightward only
+    // Try a few vertical offsets (further above the curve point) before
+    // giving up, so labels crowded together (e.g. the lowest curve point
+    // sitting right next to a 25-gap strike) stack instead of overlapping.
+    let tries = 0;
+    while (overlaps(x,y,w) && tries < 4) { y -= LABEL_H; tries++; }
+    if (overlaps(x,y,w)) return; // still colliding after nudging — skip rather than clutter
+    const t=el('text',{x,y,'text-anchor':anchor,'font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('#9a9080','#707070'),opacity:'0.9'});
     t.textContent=fmtV(row.vol); g.appendChild(t);
+    placed.push({x,y,w});
   }
   for (const row of [visible.reduce((a,b)=>a.vol<b.vol?a:b), visible.reduce((a,b)=>a.vol>b.vol?a:b)]) {
     labelRow(row);
