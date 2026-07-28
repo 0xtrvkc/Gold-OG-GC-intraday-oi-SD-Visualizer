@@ -2513,10 +2513,24 @@ function drawVolCurve(c, rows) {
   g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:tc('#9a9080','#707070'),'stroke-width':'1','stroke-linejoin':'round','stroke-linecap':'round'}));
   const fmtV = v=>(v*100).toFixed(1)+'%';
   const labeledStrikes = new Set();
+  // The μ line/label (drawMarkers) sits at the mean's x position — find the
+  // visible strike closest to it so its IV label can dodge sideways instead
+  // of sitting right on top of the vertical mean line.
+  const meanStrike = (typeof state!=='undefined' && state.mean>0)
+    ? visible.reduce((a,b)=>Math.abs(a.strike-state.mean)<Math.abs(b.strike-state.mean)?a:b, visible[0]).strike
+    : null;
   function labelRow(row) {
     if (labeledStrikes.has(row.strike)) return;
     labeledStrikes.add(row.strike);
-    const t=el('text',{x:c.toSvgX(row.strike),y:toVolY(row.vol)-4,'text-anchor':'middle','font-size':'7','font-family':'IBM Plex Mono,monospace',fill:tc('#9a9080','#707070'),opacity:'0.9'});
+    const isAtMean = row.strike === meanStrike;
+    const attrs = {
+      x:c.toSvgX(row.strike) + (isAtMean ? 12 : 0),
+      y:toVolY(row.vol)-4,
+      'text-anchor': isAtMean ? 'start' : 'middle',
+      'font-size':'7','font-family':'IBM Plex Mono,monospace',
+      fill:tc('#9a9080','#707070'),opacity:'0.9'
+    };
+    const t=el('text',attrs);
     t.textContent=fmtV(row.vol); g.appendChild(t);
   }
   for (const row of [visible.reduce((a,b)=>a.vol<b.vol?a:b), visible.reduce((a,b)=>a.vol>b.vol?a:b)]) {
