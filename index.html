@@ -1658,7 +1658,7 @@ svg.hist-svg {
 
     <div class="input-group">
       <div class="input-label">Std Dev (σ)</div>
-      <div class="input-sub" id="sd-formula-lbl">IV ÷16 × Mean (Expected Distance)</div>
+      <div class="input-sub" id="sd-formula-lbl">Default: Open×IV@.7/.8dte×√(dte/365) · fallback: IV÷16×Mean</div>
       <div style="display:flex;align-items:center;gap:5px;">
         <input type="number" id="inp-sd" value="" placeholder="auto" step="0.1" min="0.1" data-auto="1" style="width:56px;flex:0 0 56px;">
         <button id="btn-sd-mode" class="toggle-btn toggle-btn-sm active" onclick="toggleSdMode()" title="Switch between auto-computed and manual σ">⟳ Auto</button>
@@ -1696,7 +1696,7 @@ svg.hist-svg {
 
     <div class="input-group">
       <div class="input-label">IV (Expected distances)</div>
-      <div class="input-sub" id="garrow-formula-lbl">OI IV open ÷ 16 × Mean</div>
+      <div class="input-sub" id="garrow-formula-lbl">Default: Open×IV@.7/.8dte×√(dte/365) · fallback: OI IV open÷16×Mean</div>
       <input type="number" id="inp-garrow-iv" value="" placeholder="auto" step="0.01" min="0" data-auto="1">
       <button id="btn-garrow-reset" class="btn-reset" onclick="resetGArrowIv()" style="display:none">↺ reset</button>
     </div>
@@ -2553,29 +2553,21 @@ function drawVolCurve(c, rows) {
 
 /* ================================================================
   DRAW ARROW
-  Half-length is based on the locked OI min-IV from first fetch of
-  the day (oiIvOpen), so the arrow stays stable across refreshes.
-  Falls back to the current OI min-IV if no locked value yet.
-  A manual override (garrowIvOverride) takes priority over both,
-  set via the "G-Arrow IV" input panel field.
+  Half-length comes from resolveExpectedMove(): default formula is
+  (open future price) × (IV at 0.7-or-0.8 dte today) × √(dte/365);
+  falls back to (locked OI IV-open, or live min-IV) ÷ 16 × mean until
+  today's session has produced a 0.7/0.8 dte snapshot. A manual
+  override (garrowIvOverride) takes priority over both, set via the
+  "G-Arrow IV" input panel field. The arrow itself is always drawn
+  centered on the current mean — only its half-length (the distance
+  magnitude) comes from whichever formula is active.
 ================================================================ */
 function drawArrow(c, rows) {
   const g = clearG('g-arrow');
 
-  // Determine the IV to use: manual override > locked OI open-IV > current OI min-IV
-  let ivForArrow = (garrowIvOverride != null) ? garrowIvOverride : oiIvOpen;
-  if (!ivForArrow) {
-    // Fallback: compute from oiData rows if available, else liveData rows
-    const srcRows = (oiData && oiData.rows && oiData.rows.length) ? oiData.rows : rows;
-    if (!srcRows || !srcRows.length) return;
-    const visible = srcRows.filter(r=>r.strike>=c.xMin&&r.strike<=c.xMax&&r.vol!=null&&r.vol>0);
-    if (!visible.length) return;
-    ivForArrow = Math.min(...visible.map(r=>r.vol));
-  }
-
-  if (!ivForArrow || ivForArrow <= 0) return;
-
-  const halfLen = (ivForArrow / 16) * state.mean;
+  const result = resolveExpectedMove(liveData ? liveData.future : null);
+  if (!result || !(result.distance > 0)) return;
+  const halfLen = result.distance;
   const arrowY = c.plotB-280;
   const mx=c.toSvgX(state.mean);
   const lx=c.toSvgX(Math.max(state.mean-halfLen,c.xMin));
@@ -2598,11 +2590,11 @@ function drawArrow(c, rows) {
   'font-family': 'IBM Plex Mono, monospace',
   fill: tc('#a09080', '#505050')
 });
-  title.textContent = (garrowIvOverride != null)
-    ? 'Expected Distances (IV ' + (garrowIvOverride * 100).toFixed(2) + '% · manual)'
-    : oiIvOpen
-      ? 'Expected Distances (OI IV open ' + (oiIvOpen * 100).toFixed(2) + '%)'
-      : 'Expected Distances';
+  title.textContent = result.formula === 'manual'
+    ? 'Expected Distances (IV ' + (result.iv * 100).toFixed(2) + '% · manual)'
+    : result.formula === 'default'
+      ? `Expected Distances (Open×IV@${result.dte}dte ${(result.iv * 100).toFixed(2)}%×√(${result.dte}/365))`
+      : `Expected Distances (fallback: IV ${(result.iv * 100).toFixed(2)}% ÷16×Mean)`;
   g.appendChild(title);
 }
 
@@ -3149,25 +3141,82 @@ function resolveExpectedDistanceIv() {
   return Math.min(...volRows.map(r => r.vol));
 }
 
-// Std Dev (σ) auto-default. Used to scale by √(dte/365) using the
-// *current* (decaying) dte, which meant σ shrank all session long as
-// dte counted down toward zero. Default now instead equals the same
-// "Expected Distance" the arrow shows: (IV / 16) × mean — a fixed
-// one-day expected move that doesn't decay through the day. Only
-// touches the σ field/state while it's actually in auto mode; a
+// Returns {iv, dte, t} using the earliest-in-session rung (prefer 0.8 dte,
+// then 0.7 dte) that the DTE Low-IV Ladder has actually matched today, or
+// null if neither has landed yet. Backed by dteLadderMatched, which
+// renderDteLadder() (further down the file) refreshes every time the DTE
+// ladder reloads — same rungs/tolerance as the visible ladder table, so
+// "IV at 0.7/0.8 dte" here always agrees with what that table shows.
+function getDefaultMoveIvDte() {
+  if (!dteLadderMatched) return null;
+  for (const rung of [0.8, 0.7]) {
+    const m = dteLadderMatched.find(x => x.rung === rung);
+    if (m && m.point) return { iv: m.point.lowIv, dte: rung, t: m.point.t };
+  }
+  return null;
+}
+
+/* ================================================================
+  EXPECTED MOVE — shared by the "Expected Distances" arrow and the σ
+  auto-default. Priority:
+    1. Manual G-Arrow override (garrowIvOverride) — always wins, unchanged.
+    2. DEFAULT: (open future price) × (IV at 0.7 or 0.8 dte today, 0.8
+       preferred) × √(that dte / 365) — the full expected-move formula,
+       using today's actual future-at-open and a mid-session IV reading
+       instead of the /16 shorthand.
+    3. FALLBACK (original formula, used until #2's inputs exist — i.e.
+       before today's session has reached 0.7/0.8 dte, or futureOpen
+       hasn't locked yet): (locked OI IV-open, or live OI/Intraday
+       min-IV) ÷ 16 × mean.
+  Returns null only if nothing above is computable yet.
+================================================================ */
+function resolveExpectedMove(meanFallback) {
+  const mean = state.mean > 0 ? state.mean : meanFallback;
+
+  if (garrowIvOverride != null) {
+    if (!(mean > 0)) return null;
+    return {
+      distance: (garrowIvOverride / 16) * mean,
+      formula: 'manual', dte: null, iv: garrowIvOverride, mean,
+      label: `Manual override — IV ${(garrowIvOverride * 100).toFixed(2)}% ÷16 × Mean`
+    };
+  }
+
+  const dflt = getDefaultMoveIvDte();
+  if (dflt && futureOpen > 0) {
+    const distance = futureOpen * dflt.iv * Math.sqrt(dflt.dte / 365);
+    return {
+      distance, formula: 'default', dte: dflt.dte, iv: dflt.iv, mean: futureOpen,
+      label: `Default — Open ${futureOpen.toLocaleString()} × IV@${dflt.dte}dte ${(dflt.iv * 100).toFixed(2)}% × √(${dflt.dte}/365)`
+    };
+  }
+
+  const ivDec = resolveExpectedDistanceIv();
+  if (!ivDec || ivDec <= 0 || !(mean > 0)) return null;
+  return {
+    distance: (ivDec / 16) * mean,
+    formula: 'fallback', dte: null, iv: ivDec, mean,
+    label: `Fallback (no 0.7/0.8dte IV yet) — ${oiIvOpen != null ? 'OI IV open' : 'IV'} ${(ivDec * 100).toFixed(2)}% ÷16 × Mean`
+  };
+}
+
+// Std Dev (σ) auto-default. Now goes through resolveExpectedMove(): the
+// new default formula (open future × IV@0.7-or-0.8dte × √(dte/365)) when
+// today's session has produced one, else the original IV÷16×mean formula.
+// Only touches the σ field/state while it's actually in auto mode; a
 // manually-entered σ is left alone.
 function recomputeAutoSd() {
-  const ivDec = resolveExpectedDistanceIv();
-  const meanForSd = state.mean > 0 ? state.mean : (liveData ? liveData.future : null);
-  if (!ivDec || ivDec <= 0 || !meanForSd || meanForSd <= 0) return;
-  computedSd = (ivDec / 16) * meanForSd;
+  const meanForSd = liveData ? liveData.future : null;
+  const result = resolveExpectedMove(meanForSd);
+  if (!result) return;
+  computedSd = result.distance;
   const sdInp = document.getElementById('inp-sd');
   if (sdAutoMode && sdInp && (sdInp.value === '' || sdInp.dataset.auto === '1')) {
     sdInp.value = computedSd.toFixed(1);
     sdInp.dataset.auto = '1';
     state.sd = computedSd;
     const lbl = document.getElementById('sd-formula-lbl');
-    if (lbl) lbl.textContent = `IV:${(ivDec * 100).toFixed(2)}% ÷16 × Mean → σ=${computedSd.toFixed(0)}`;
+    if (lbl) lbl.textContent = `${result.label} → σ=${computedSd.toFixed(0)}`;
   }
 }
 
@@ -3794,6 +3843,7 @@ async function fetchData() {
     liveData=parseIntraday(text);
     intradayUpdatedAt = new Date();
     saveDataCache(LIVE_DATA_CACHE_KEY, liveData);
+    if (liveData.future != null) maybeLockFutureOpen(liveData.future);
     // A genuinely live fetch just succeeded — drop the "showing cached
     // data" warning if it was up from an earlier failure/cold boot.
     liveDataIsCached = false;
@@ -4112,6 +4162,23 @@ let oiIvOpen = null;        // decimal form e.g. 0.123
 let oiIvOpenSource = null;  // 'exact' | 'fallback-earliest' | 'fallback-live' | null
 let oiIvOpenRetryTimer = null;
 
+// ── Expected-Move DEFAULT formula inputs ──────────────────────────────
+// (open future price) × (IV at 0.7 or 0.8 dte today) × √(0.7-or-0.8/365)
+// futureOpen: the first live future price observed today, locked the same
+// way oiIvOpen's cheapest fallback works (first tick of the day, never
+// overwritten until the calendar date rolls over). Simpler than oiIvOpen's
+// git-history "exact 0.99 dte" lookup on purpose — there is no equivalent
+// authoritative source for "future price at open" to reconcile against.
+let futureOpen = null;
+let futureOpenDate = null; // yyyy-mm-dd this value was locked for
+const FUTURE_OPEN_KEY = 'sdviz_future_open_v1';
+
+// dteLadderMatched: populated by loadDteLadder()/renderDteLadder() — the
+// same per-0.1-rung {rung, point:{t,dte,lowIv}|null} array the DTE Low-IV
+// Ladder table renders. Reused here (rather than re-querying the db) to
+// find "IV at 0.7 or 0.8 dte" for the default expected-move formula.
+let dteLadderMatched = null;
+
 // Confidence ranking — a result can only ever *replace* the current value if
 // its source outranks (or ties, for a same-source refresh) what's already
 // locked in. This is what makes the background retry safe to fire
@@ -4128,6 +4195,42 @@ const OI_IV_SOURCE_RANK = { 'exact': 3, 'fallback-earliest': 2, 'fallback-live':
 // doesn't retry indefinitely — it just settles on the best fallback found.
 const OI_RETRY_SCHEDULE_MIN = [2, 5, 15, 30, 60];
 const OI_RETRY_MAX_ATTEMPTS = 12;
+
+// ── futureOpen persistence ──────────────────────────────────────────
+function loadFutureOpenState() {
+  try {
+    const raw = localStorage.getItem(FUTURE_OPEN_KEY);
+    if (!raw) return null;
+    const state = JSON.parse(raw);
+    const today = new Date().toISOString().slice(0, 10);
+    if (state.date !== today) return null; // yesterday's lock — start fresh
+    return state;
+  } catch(e) { return null; }
+}
+
+function saveFutureOpenState(price, date) {
+  try { localStorage.setItem(FUTURE_OPEN_KEY, JSON.stringify({ price, date })); } catch(e) {}
+}
+
+// Restores today's locked future-open price, if any, at boot.
+function loadFutureOpen() {
+  const state = loadFutureOpenState();
+  if (!state || !(state.price > 0)) return;
+  futureOpen = state.price;
+  futureOpenDate = state.date;
+}
+
+// Locks in futureOpen the first time a live future price is seen today.
+// Never overwritten afterward (same date) — this is deliberately "first
+// tick", not an attempt to reconcile against an authoritative open print.
+function maybeLockFutureOpen(price) {
+  if (!(price > 0)) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (futureOpen != null && futureOpenDate === today) return; // already locked for today
+  futureOpen = price;
+  futureOpenDate = today;
+  saveFutureOpenState(price, today);
+}
 
 function loadOiIvOpenState() {
   try {
@@ -4448,8 +4551,13 @@ function resetGArrowIv() {
   inp.dataset.auto = '1';
   if (oiIvOpen != null) inp.value = (oiIvOpen * 100).toFixed(2);
   document.getElementById('btn-garrow-reset').style.display = 'none';
-  document.getElementById('garrow-formula-lbl').textContent = 'OI IV open ÷ 16 × Mean';
-  recomputeAutoSd(); // σ auto-default tracks the same IV the arrow uses
+  const result = resolveExpectedMove(liveData ? liveData.future : null);
+  document.getElementById('garrow-formula-lbl').textContent = result
+    ? (result.formula === 'default'
+        ? `Default: Open×IV@${result.dte}dte×√(${result.dte}/365)`
+        : `Fallback: OI IV open ÷16 × Mean`)
+    : 'OI IV open ÷ 16 × Mean';
+  recomputeAutoSd(); // σ auto-default tracks the same formula the arrow uses
   render();
 }
 
@@ -4615,15 +4723,14 @@ function trDomVal(id) {
   return el && el.textContent.trim() ? el.textContent.trim() : '—';
 }
 
-// Expected Distance: (IV / 16) × mean, the same formula the "Expected
-// Distances" arrow and SD-auto-mode use — computed fresh here so it's
-// captured independently of whatever the SD field is currently showing
-// (SD can be in manual mode and diverge from the formula).
+// Expected Distance: same formula resolveExpectedMove() gives the "Expected
+// Distances" arrow and SD-auto-mode — computed fresh here so it's captured
+// independently of whatever the SD field is currently showing (SD can be in
+// manual mode and diverge from the formula).
 function trExpectedDistance() {
-  const ivDec = resolveExpectedDistanceIv();
-  const mean = state.mean > 0 ? state.mean : (liveData ? liveData.future : null);
-  if (!ivDec || ivDec <= 0 || !mean || mean <= 0) return '—';
-  return ((ivDec / 16) * mean).toFixed(1);
+  const result = resolveExpectedMove(liveData ? liveData.future : null);
+  if (!result || !(result.distance > 0)) return '—';
+  return result.distance.toFixed(1);
 }
 
 /* ── AT-TIME BACKFILL ─────────────────────────────────────────────────────
@@ -6529,6 +6636,15 @@ function renderDteLadder(points) {
   const filled = matched.filter(m => m.point).length;
   if (metaEl) metaEl.textContent = `${filled}/${DTE_LADDER_RUNGS.length} rungs`;
 
+  // Cache for the default expected-move formula (see resolveExpectedMove()),
+  // then re-run it: the 0.7/0.8 dte rungs typically aren't filled yet on the
+  // very first call (today's session has barely started), so this is what
+  // upgrades the arrow/σ from the fallback formula to the default one the
+  // moment enough of the session has actually happened.
+  dteLadderMatched = matched;
+  recomputeAutoSd();
+  render();
+
   // The point with the smallest dte seen so far is "current" (closest to
   // expiry) — a small visual anchor, not a claim about which rung is "next".
   const minDtePoint = points.reduce((a, b) => (b.dte < a.dte ? b : a), points[0]);
@@ -6595,6 +6711,7 @@ initGaugeBands();
 loadGithubToken();  // restore any previously-saved optional GitHub token (client-side only)
 loadDataCachesAtBoot(); // paint last known-good chart/macro data instantly, before the first live fetch lands
 initOiIvOpen();     // resolve today's true first OI IV from git history (falls back to first-fetch lock)
+loadFutureOpen();   // restore today's locked future-at-open price (default expected-move formula input)
 loadHistory();      // restore today's session history (localStorage fallback)
 loadHistoryFromApi(); // backfill from local api.py server, if running (dev/localhost only)
 loadHistoryFromDb();  // backfill from the public itd-oi-db — works everywhere, incl. GitHub Pages
