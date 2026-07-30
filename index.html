@@ -2593,8 +2593,8 @@ function drawArrow(c, rows) {
   title.textContent = result.formula === 'manual'
     ? 'Expected Distances (IV ' + (result.iv * 100).toFixed(2) + '% · manual)'
     : result.formula === 'default'
-      ? `Expected Distances (Open×IV@${result.dte}dte ${(result.iv * 100).toFixed(2)}%×√(${result.dte}/365))`
-      : `Expected Distances (fallback: IV ${(result.iv * 100).toFixed(2)}% ÷16×Mean)`;
+      ? `Expected Distances (${result.dte}dte IV ${(result.iv * 100).toFixed(2)}%)`
+      : `Expected Distances (IV ${(result.iv * 100).toFixed(2)}% ÷16×Mean)`;
   g.appendChild(title);
 }
 
@@ -3182,12 +3182,20 @@ function resolveExpectedMove(meanFallback) {
     };
   }
 
+  // If Mean (μ) has been manually overridden, use that typed value as the
+  // default formula's price term instead of the locked open price — a
+  // manual Mean edit is the person saying "pretend price is X", and that
+  // should flow through to σ and the arrow, not just the fallback formula.
+  const meanInp = document.getElementById('inp-mean');
+  const meanIsManual = meanInp && meanInp.dataset.auto === '' && meanInp.value !== '';
+  const priceForDefault = meanIsManual ? mean : futureOpen;
+
   const dflt = getDefaultMoveIvDte();
-  if (dflt && futureOpen > 0) {
-    const distance = futureOpen * dflt.iv * Math.sqrt(dflt.dte / 365);
+  if (dflt && priceForDefault > 0) {
+    const distance = priceForDefault * dflt.iv * Math.sqrt(dflt.dte / 365);
     return {
-      distance, formula: 'default', dte: dflt.dte, iv: dflt.iv, mean: futureOpen,
-      label: `Default — Open ${futureOpen.toLocaleString()} × IV@${dflt.dte}dte ${(dflt.iv * 100).toFixed(2)}% × √(${dflt.dte}/365)`
+      distance, formula: 'default', dte: dflt.dte, iv: dflt.iv, mean: priceForDefault,
+      label: `Default — ${meanIsManual ? 'Mean' : 'Open'} ${priceForDefault.toLocaleString()} × IV@${dflt.dte}dte ${(dflt.iv * 100).toFixed(2)}% × √(${dflt.dte}/365)`
     };
   }
 
@@ -4039,6 +4047,7 @@ function resetMean() {
     meanInp.dataset.auto = '1';
     document.getElementById('btn-mean-reset').style.display = 'none';
     document.getElementById('mean-lbl').textContent = `Future: ${liveData.future.toLocaleString()}  Δ: ${liveData.futChg}`;
+    recomputeAutoSd();
     render();
   }
 }
