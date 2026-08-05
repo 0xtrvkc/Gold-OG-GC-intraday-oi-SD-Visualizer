@@ -5303,10 +5303,22 @@ function copyTradeLog() {
     return relativeStrikeMap(r.strikesOi, atm, oiStep);
   });
 
-  const intraOffsetsSeen = Array.from(new Set(rowIntraOffsets.flatMap(m => Array.from(m.keys())))).sort((a, b) => a - b);
-  const oiOffsetsSeen    = Array.from(new Set(rowOiOffsets.flatMap(m => Array.from(m.keys())))).sort((a, b) => a - b);
-  for (const off of intraOffsetsSeen) headers.push(`${offsetLabel(off)} Call (Intra)`, `${offsetLabel(off)} Put (Intra)`);
-  for (const off of oiOffsetsSeen)    headers.push(`${offsetLabel(off)} Call (OI)`,    `${offsetLabel(off)} Put (OI)`);
+  // FIXED offset range — deliberately NOT derived from what this session's
+  // tradeLog happened to contain. tradeLog is in-memory only and resets
+  // every day (see note above TRADE RECORDER), so a "seen offsets" union
+  // produces a different header row every day depending on which strikes
+  // your trades happened to touch (worse after a price surge shifts ATM).
+  // A constant range keeps the exported header row byte-identical day to
+  // day, so pasting into the same Google Sheet always lines up under the
+  // same columns — only the values differ, never the schema. Widen/narrow
+  // TR_COPY_OFFSET_RANGE if you routinely need more/fewer strikes either
+  // side of ATM.
+  const TR_COPY_OFFSET_RANGE = 10; // -> ATM-10 ... ATM+10
+  const fixedOffsets = Array.from({length: TR_COPY_OFFSET_RANGE * 2 + 1}, (_, i) => i - TR_COPY_OFFSET_RANGE);
+  for (const off of fixedOffsets) headers.push(`${offsetLabel(off)} Call (Intra)`, `${offsetLabel(off)} Put (Intra)`);
+  for (const off of fixedOffsets) headers.push(`${offsetLabel(off)} Call (OI)`,    `${offsetLabel(off)} Put (OI)`);
+  const intraOffsetsSeen = fixedOffsets;
+  const oiOffsetsSeen    = fixedOffsets;
 
   const lines = [headers.map(sanitizeCell).join('\t')];
   tradeLog.forEach((r, idx) => {
