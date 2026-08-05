@@ -704,10 +704,10 @@ svg#chart {
 #tt-history { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tt-hist-label { font-size: 10px; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px; }
 .tt-hist-sublabel { font-size: 9px; color: var(--fg3); opacity: 0.75; font-style: italic; margin-bottom: 6px; }
-#tt-hist-chart { width: 360px; height: 170px; }
+#tt-hist-chart { width: 360px; height: 188px; }
 #tt-hist-chart svg { display: block; }
 .tt-hist-loading { font-size: 11px; color: var(--fg3); padding: 48px 0; text-align: center; }
-#tt-hist-legend { display: flex; gap: 16px; margin-top: 6px; font-size: 11px; }
+#tt-hist-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 11px; }
 .tt-hist-leg-item { display: flex; align-items: center; gap: 5px; color: var(--fg2); }
 .tt-hist-leg-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .tt-hist-axis-lbl { font-size: 8.5px; font-family: var(--mono); fill: var(--fg3); }
@@ -2814,8 +2814,8 @@ function renderStrikeHistoryChart(strike) {
     return;
   }
 
-  const W = 360, H = 170;
-  const padL = 34, padR = 32, padT = 8, padB = 46;
+  const W = 360, H = 188;
+  const padL = 34, padR = 32, padT = 8, padB = 62;
   const plotL = padL, plotR = W - padR, plotT = padT, plotB = H - padB;
   const maxV = Math.max(1, ...series.map(p => Math.max(p.call, p.put)));
   const n = series.length;
@@ -2840,6 +2840,10 @@ function renderStrikeHistoryChart(strike) {
   const axisCol = tc('#d8cfc0', '#2a2a2a');
   const fmt2 = v => v>=1000 ? (v/1000).toFixed(1)+'k' : Math.round(v).toString();
   const fmtTime = (t, opts) => new Date(t).toLocaleTimeString([], opts || {hour:'2-digit', minute:'2-digit'});
+  // Shorter form for the rotated x-axis ticks: drop the AM/PM suffix so the
+  // rotated label fits in the reserved bottom padding instead of running
+  // past it into the legend row below the chart.
+  const fmtAxisTime = t => fmtTime(t).replace(/\s?[AP]M$/i, '');
 
   // Horizontal gridlines + value labels (0%, 50%, 100% of the max seen) — left axis (call/put).
   let gridSvg = '';
@@ -2865,7 +2869,7 @@ function renderStrikeHistoryChart(strike) {
     const x = xAt(idx);
     const ly = plotB + 6;
     axisSvg += `<line x1="${x.toFixed(1)}" y1="${plotB}" x2="${x.toFixed(1)}" y2="${(plotB+3).toFixed(1)}" stroke="${axisCol}" stroke-width="1"/>`;
-    axisSvg += `<text x="${x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="end" transform="rotate(-90 ${x.toFixed(1)} ${ly.toFixed(1)})" class="tt-hist-axis-lbl">${fmtTime(series[idx].t)}</text>`;
+    axisSvg += `<text x="${x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="end" transform="rotate(-90 ${x.toFixed(1)} ${ly.toFixed(1)})" class="tt-hist-axis-lbl">${fmtAxisTime(series[idx].t)}</text>`;
   }
 
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
