@@ -1548,6 +1548,23 @@ svg.hist-svg {
 }
 .hist-legend-item .lval:empty { display: none; }
 
+/* Small-multiples panel stack: IV / Intraday / OI each get their own
+   real-unit mini chart instead of one shared normalized 0..1 axis. */
+.hist-panel { border-bottom: 1px solid var(--line); }
+.hist-panel:last-of-type { border-bottom: none; }
+.hist-panel-hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 12px 2px;
+}
+.hist-panel-lbl-group { display: flex; gap: 12px; }
+.hist-panel-lbl { font-size: 10px; font-weight: 500; letter-spacing: 0.02em; }
+.hist-panel-lbl b { font-weight: 600; color: var(--fg0); margin-left: 3px; }
+.hist-panel-val { font-size: 10px; font-weight: 600; color: var(--fg0); font-variant-numeric: tabular-nums; }
+.hist-chart-shell-sm { height: 128px; border-bottom: none; }
+.hist-chart-shell-sm svg.hist-svg { height: 128px; }
+
 .hist-empty {
   padding: 40px 14px;
   text-align: center;
@@ -1863,34 +1880,77 @@ svg.hist-svg {
 
     <div class="hist-grid">
 
-      <!-- COMBINED CHART: IV + Intraday Calls/Puts + OI Calls/Puts, all through the day on one axis -->
-      <div class="hist-box">
+      <!-- SMALL MULTIPLES: IV, Intraday Calls/Puts, and OI Calls/Puts each get
+           their own real-unit panel instead of being squashed onto one shared
+           0..1 normalized axis. Easier to read at a glance, and the OI panel
+           collapses away entirely while both its series are toggled off. -->
+      <div class="hist-box hist-box-sm">
         <div class="hist-header">
           <div class="hist-title-row">
             <span class="hist-label">IV · Intraday · OI</span>
           </div>
           <span class="hist-meta" id="hist-combined-meta">—</span>
         </div>
-        <div class="hist-chart-shell">
-          <svg class="hist-svg" id="hist-chart-combined" viewBox="0 0 800 260" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-            <defs id="hc-defs"></defs>
-            <g id="g-hc-grid"></g>
-            <g id="g-hc-area"></g>
-            <g id="g-hc-line"></g>
-            <g id="g-hc-points"></g>
-            <g id="g-hc-hover"></g>
-            <g id="g-hc-hit"></g>
-          </svg>
-          <div class="hist-empty" id="hist-combined-empty">Waiting for first refresh tick…</div>
+
+        <div id="hist-sm-panels">
+        <div class="hist-panel" id="hist-panel-iv">
+          <div class="hist-panel-hdr">
+            <span class="hist-panel-lbl" style="color:#9a9080" id="leg-item-vol">Recent IV</span>
+            <span class="hist-panel-val" id="leg-hc-vol">—</span>
+          </div>
+          <div class="hist-chart-shell hist-chart-shell-sm">
+            <svg class="hist-svg" id="hist-chart-iv" viewBox="0 0 800 180" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <defs id="hc-iv-defs"></defs>
+              <g id="g-hc-iv-grid"></g>
+              <g id="g-hc-iv-area"></g>
+              <g id="g-hc-iv-line"></g>
+              <g id="g-hc-iv-points"></g>
+              <g id="g-hc-iv-hover"></g>
+              <g id="g-hc-iv-hit"></g>
+            </svg>
+          </div>
         </div>
+
+        <div class="hist-panel" id="hist-panel-intra">
+          <div class="hist-panel-hdr">
+            <span class="hist-panel-lbl-group">
+              <span class="hist-panel-lbl" style="color:#1a3a6b" id="leg-item-intraCall">Intraday calls <b id="leg-hc-intraCall">—</b></span>
+              <span class="hist-panel-lbl" style="color:#c9920a" id="leg-item-intraPut">puts <b id="leg-hc-intraPut">—</b></span>
+            </span>
+          </div>
+          <div class="hist-chart-shell hist-chart-shell-sm">
+            <svg class="hist-svg" id="hist-chart-intra" viewBox="0 0 800 180" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <g id="g-hc-intra-grid"></g>
+              <g id="g-hc-intra-line"></g>
+              <g id="g-hc-intra-points"></g>
+              <g id="g-hc-intra-hover"></g>
+              <g id="g-hc-intra-hit"></g>
+            </svg>
+          </div>
+        </div>
+
+        <div class="hist-panel" id="hist-panel-oi">
+          <div class="hist-panel-hdr">
+            <span class="hist-panel-lbl-group">
+              <span class="hist-panel-lbl" style="color:#1a3a6b" id="leg-item-oiCall">OI calls <b id="leg-hc-oiCall">—</b></span>
+              <span class="hist-panel-lbl" style="color:#c9920a" id="leg-item-oiPut">puts <b id="leg-hc-oiPut">—</b></span>
+            </span>
+          </div>
+          <div class="hist-chart-shell hist-chart-shell-sm">
+            <svg class="hist-svg" id="hist-chart-oi" viewBox="0 0 800 180" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <g id="g-hc-oi-grid"></g>
+              <g id="g-hc-oi-line"></g>
+              <g id="g-hc-oi-points"></g>
+              <g id="g-hc-oi-hover"></g>
+              <g id="g-hc-oi-hit"></g>
+            </svg>
+          </div>
+        </div>
+
+        </div>
+
+        <div class="hist-empty" id="hist-combined-empty">Waiting for first refresh tick…</div>
         <div class="hist-xaxis" id="hist-combined-xaxis"></div>
-        <div class="hist-legend">
-          <div class="hist-legend-item" id="leg-item-vol" onclick="toggleHistSeries('vol')" role="button" tabindex="0"><div class="hist-legend-swatch" style="background:#9a9080;"></div><span class="lv" style="color:#9a9080">Recent IV</span><span class="lval" id="leg-hc-vol"></span></div>
-          <div class="hist-legend-item" id="leg-item-intraCall" onclick="toggleHistSeries('intraCall')" role="button" tabindex="0"><div class="hist-legend-swatch" style="background:#1a3a6b;"></div><span class="lv" style="color:#1a3a6b">Intraday Calls</span><span class="lval" id="leg-hc-intraCall"></span></div>
-          <div class="hist-legend-item" id="leg-item-intraPut" onclick="toggleHistSeries('intraPut')" role="button" tabindex="0"><div class="hist-legend-swatch" style="background:#c9920a;"></div><span class="lv" style="color:#c9920a">Intraday Puts</span><span class="lval" id="leg-hc-intraPut"></span></div>
-          <div class="hist-legend-item is-off" id="leg-item-oiCall" onclick="toggleHistSeries('oiCall')" role="button" tabindex="0"><div class="hist-legend-swatch dashed" style="color:#1a3a6b;"></div><span class="lv" style="color:#1a3a6b">OI Calls</span><span class="lval" id="leg-hc-oiCall"></span></div>
-          <div class="hist-legend-item is-off" id="leg-item-oiPut" onclick="toggleHistSeries('oiPut')" role="button" tabindex="0"><div class="hist-legend-swatch dashed" style="color:#c9920a;"></div><span class="lv" style="color:#c9920a">OI Puts</span><span class="lval" id="leg-hc-oiPut"></span></div>
-        </div>
       </div>
 
     </div>
@@ -5386,6 +5446,11 @@ function copyTradeLog() {
   math is unaffected by the time-based x positioning.
 ================================================================ */
 const HCFG = { W: 800, H: 260, PAD_L: 46, PAD_R: 14, PAD_T: 16, PAD_B: 10 };
+// Small-multiples panel config — same width/x-padding as HCFG (so all
+// stacked panels line up on the same x-axis) but a much shorter height
+// since each panel now only carries one series (or one call/put pair)
+// instead of five overlapping ones.
+const HCFG_SM = { W: 800, H: 180, PAD_L: 46, PAD_R: 14, PAD_T: 18, PAD_B: 14 };
 
 // Best practice: don't let a straight line silently paper over a real gap
 // in the data. If two consecutive plotted points for a series are farther
@@ -5429,9 +5494,10 @@ function dayWindow() {
 // few hundredths of a point) gets auto-zoomed so hard that ordinary noise
 // reads as a dramatic cliff. Enforcing a minimum visual span keeps small,
 // real moves looking small.
-function histLayout(vMin, vMax, minSpan) {
-  const pL = HCFG.PAD_L, pR = HCFG.W - HCFG.PAD_R;
-  const pT = HCFG.PAD_T, pB = HCFG.H - HCFG.PAD_B;
+function histLayout(vMin, vMax, minSpan, cfg) {
+  cfg = cfg || HCFG;
+  const pL = cfg.PAD_L, pR = cfg.W - cfg.PAD_R;
+  const pT = cfg.PAD_T, pB = cfg.H - cfg.PAD_B;
   if (vMax - vMin < 1e-9) { vMax = vMin + 1; }
   if (minSpan && (vMax - vMin) < minSpan) {
     const mid = (vMax + vMin) / 2;
@@ -5477,6 +5543,33 @@ function drawHistGrid(gridGroupId, L, fmtVal) {
   }
 }
 
+// Turns a sharp-cornered polyline into a smooth one *without* inventing any
+// values between real data points — each vertex gets rounded off with a
+// short quadratic curve (radius capped at half the shorter adjacent segment),
+// so the line still passes within a hair of every real point and never
+// overshoots past it. This is the safe alternative to spline/catmull-rom
+// smoothing: spline curves can bulge past flat-then-jump data (e.g. an OI
+// count that holds steady then steps up) and imply a rise/dip that never
+// happened; corner-rounding can't overshoot because it's built entirely from
+// the existing segment endpoints.
+function roundedPathD(pts, radius) {
+  radius = radius || 5;
+  if (pts.length < 2) return '';
+  if (pts.length === 2) return `M${pts[0][0]},${pts[0][1]} L${pts[1][0]},${pts[1][1]}`;
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const prev = pts[i-1], cur = pts[i], next = pts[i+1];
+    const d1 = Math.hypot(cur[0]-prev[0], cur[1]-prev[1]) || 1;
+    const d2 = Math.hypot(next[0]-cur[0], next[1]-cur[1]) || 1;
+    const r1 = Math.min(radius, d1/2), r2 = Math.min(radius, d2/2);
+    const inX  = cur[0] - (cur[0]-prev[0]) * (r1/d1), inY  = cur[1] - (cur[1]-prev[1]) * (r1/d1);
+    const outX = cur[0] + (next[0]-cur[0]) * (r2/d2), outY = cur[1] + (next[1]-cur[1]) * (r2/d2);
+    d += ` L${inX},${inY} Q${cur[0]},${cur[1]} ${outX},${outY}`;
+  }
+  d += ` L${pts[pts.length-1][0]},${pts[pts.length-1][1]}`;
+  return d;
+}
+
 // Draws a single value-series as a thin polyline using real timestamps for x position.
 // dashed: true draws a dashed stroke — used to tell an OI series apart from its
 // same-colored Intraday counterpart when both share one combined chart.
@@ -5488,12 +5581,14 @@ function drawHistSeries(g, L, points, idxs, color, width, dashed) {
     if (seg.length < 2) {
       if (seg.length === 1) {
         const i = seg[0];
-        g.appendChild(el('circle',{cx:L.toX(gcfHistory[i].t),cy:L.toY(points[i]),r:'2.5',fill:color}));
+        const cx = L.toX(gcfHistory[i].t), cy = L.toY(points[i]);
+        g.appendChild(el('circle',{cx,cy,r:'5',fill:color,opacity:'0.35'}));
+        g.appendChild(el('circle',{cx,cy,r:'2.5',fill:color}));
       }
       continue;
     }
-    const pts = seg.map(i => `${L.toX(gcfHistory[i].t)},${L.toY(points[i])}`);
-    g.appendChild(el('polyline',{points:pts.join(' '),fill:'none',stroke:color,'stroke-width':width||'1.5','stroke-linejoin':'round','stroke-linecap':'round','stroke-dasharray': dashed ? '5,3' : 'none'}));
+    const pts = seg.map(i => [L.toX(gcfHistory[i].t), L.toY(points[i])]);
+    g.appendChild(el('path',{d:roundedPathD(pts),fill:'none',stroke:color,'stroke-width':width||'1.5','stroke-linejoin':'round','stroke-linecap':'round','stroke-dasharray': dashed ? '5,3' : 'none'}));
   }
 }
 
@@ -5557,17 +5652,11 @@ function renderHistChartsInner() {
 // Which Session History series are currently shown — toggled by clicking a
 // legend item. OI Calls/Puts start off since Intraday is the more commonly
 // watched pair; the legend value still updates even when a series is hidden.
-let histSeriesVisible = { vol: true, intraCall: true, intraPut: true, oiCall: false, oiPut: false };
-
-function toggleHistSeries(key) {
-  histSeriesVisible[key] = !histSeriesVisible[key];
-  const item = document.getElementById(`leg-item-${key}`);
-  if (item) item.classList.toggle('is-off', !histSeriesVisible[key]);
-  renderHistCharts();
-}
+// All series always render — no per-series toggling; each panel shows
+// everything it has data for.
 
 function renderCombinedHistChart() {
-  const shell = document.getElementById('hist-chart-combined');
+  const shell = document.getElementById('hist-sm-panels');
   const empty = document.getElementById('hist-combined-empty');
   const meta  = document.getElementById('hist-combined-meta');
   if (!shell) return;
@@ -5610,100 +5699,116 @@ function renderCombinedHistChart() {
   empty.style.display = 'none';
   shell.dataset.hasData = '1';
 
-  // Shared time axis; each series supplies its own y-normalization below.
-  const pL = HCFG.PAD_L, pR = HCFG.W - HCFG.PAD_R, pT = HCFG.PAD_T, pB = HCFG.H - HCFG.PAD_B;
   const { tStart, tEnd } = dayWindow();
-  const L = {
-    pL, pR, pT, pB,
-    toX: t => M.scale(t, tStart, tEnd, pL, pR),
-    toY: f => M.scale(f, 0, 1, pB, pT), // f = normalized 0..1 fraction within a series' own range
-  };
-
-  drawHistGrid('g-hc-grid', L, null); // gridlines only — no value labels, since units mix
-
-  function rangeOf(vals, minSpan) {
-    if (!vals.length) return null;
-    const l = histLayout(Math.min(...vals), Math.max(...vals), minSpan);
-    return { yLo: l.yLo, yHi: l.yHi };
-  }
-  const normalize = (v, rng) => (v - rng.yLo) / (rng.yHi - rng.yLo);
-
-  const volRng = rangeOf(volVals, 1.0);
-  const intraAll = [...intraCallVals, ...intraPutVals];
-  const intraRng = intraAll.length ? rangeOf(intraAll, Math.max(...intraAll) * 0.05) : null;
-  const oiAll = [...oiCallVals, ...oiPutVals];
-  const oiRng = oiAll.length ? rangeOf(oiAll, Math.max(...oiAll) * 0.05) : null;
-
   const volColor       = tc('#9a9080','#a8a090');
   const intraCallColor = tc('#1a3a6b','#4a7ac8');
   const intraPutColor  = tc('#c9920a','#d4a830');
   const oiCallColor    = intraCallColor;
   const oiPutColor     = intraPutColor;
 
-  const areaG = clearG('g-hc-area');
-  const lineG = clearG('g-hc-line');
-  const ptsG  = clearG('g-hc-points');
-  const hitSeries = [];
-
-  function endpointDots(pts, color) {
-    const lp = pts[pts.length-1];
-    ptsG.appendChild(el('circle',{cx:lp[0],cy:lp[1],r:'5.5',fill:color,opacity:'0.5',class:'hist-live-halo'}));
-    ptsG.appendChild(el('circle',{cx:lp[0],cy:lp[1],r:'2.75',fill:color}));
+  // Each panel gets its own real-value y-axis (histLayout maps straight to
+  // real units, not a shared 0..1 fraction) — no more squashing IV percent
+  // and contract counts onto one axis just so they can share a chart.
+  function panelLayout(vals, minSpanFn) {
+    if (!vals.length) return null;
+    return histLayout(Math.min(...vals), Math.max(...vals), minSpanFn ? minSpanFn(vals) : undefined, HCFG_SM);
   }
 
-  // Recent IV — the one filled/area series, drawn first so it sits behind the rest.
-  if (volRng && volIdxs.length) {
-    const valByIdx = {}; volIdxs.forEach((i,k)=>valByIdx[i]=volVals[k]);
-    if (histSeriesVisible.vol) {
-      const fillUrl = makeAreaGradient('hc-defs', 'hc-grad', volColor);
-      // Same gap-aware segmenting as drawHistSeries: each contiguous run of
-      // real points gets its own area+line; a long gap breaks instead of
-      // interpolating a straight-line guess across it.
+  function endpointDots(g, pts, color) {
+    const lp = pts[pts.length-1];
+    g.appendChild(el('circle',{cx:lp[0],cy:lp[1],r:'5.5',fill:color,opacity:'0.5',class:'hist-live-halo'}));
+    g.appendChild(el('circle',{cx:lp[0],cy:lp[1],r:'2.75',fill:color}));
+  }
+
+  // ── IV panel ──
+  const ivPanel = document.getElementById('hist-panel-iv');
+  const volL = panelLayout(volVals, () => 1.0);
+  ivPanel.style.display = (volL && volIdxs.length) ? '' : 'none';
+  if (volL && volIdxs.length) {
+    const L = volL;
+    drawHistGrid('g-hc-iv-grid', L, v => v.toFixed(1)+'%');
+    const areaG = clearG('g-hc-iv-area'), lineG = clearG('g-hc-iv-line'), ptsG = clearG('g-hc-iv-points');
+    const hitSeries = [];
+    {
+      const valByIdx = {}; volIdxs.forEach((i,k)=>valByIdx[i]=volVals[k]);
+      const fillUrl = makeAreaGradient('hc-iv-defs', 'hc-iv-grad', volColor);
       let lastPts = null;
       for (const seg of splitByGap(volIdxs)) {
-        const pts = seg.map(i => [L.toX(gcfHistory[i].t), L.toY(normalize(valByIdx[i], volRng))]);
+        const pts = seg.map(i => [L.toX(gcfHistory[i].t), L.toY(valByIdx[i])]);
         if (pts.length >= 2) {
-          let areaD = `M${pts[0][0]},${L.pB} L${pts[0][0]},${pts[0][1]}`;
-          for (let k = 1; k < pts.length; k++) areaD += ` L${pts[k][0]},${pts[k][1]}`;
-          areaD += ` L${pts[pts.length-1][0]},${L.pB} Z`;
+          const topD = roundedPathD(pts).replace(/^M[-\d.]+,[-\d.]+ ?/, '');
+          const areaD = `M${pts[0][0]},${L.pB} L${pts[0][0]},${pts[0][1]} ${topD} L${pts[pts.length-1][0]},${L.pB} Z`;
           areaG.appendChild(el('path', { d: areaD, fill: fillUrl, stroke: 'none' }));
-          const linePts = pts.map(p => `${p[0]},${p[1]}`).join(' ');
-          lineG.appendChild(el('polyline', { points: linePts, fill:'none', stroke:volColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+          lineG.appendChild(el('path', { d: roundedPathD(pts), fill:'none', stroke:volColor, 'stroke-width':'1.5', 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
         } else if (pts.length === 1) {
+          lineG.appendChild(el('circle', { cx: pts[0][0], cy: pts[0][1], r:'5', fill:volColor, opacity:'0.35' }));
           lineG.appendChild(el('circle', { cx: pts[0][0], cy: pts[0][1], r:'2.5', fill:volColor }));
         }
         if (pts.length) lastPts = pts;
       }
-      if (lastPts) endpointDots(lastPts, volColor);
+      if (lastPts) endpointDots(ptsG, lastPts, volColor);
       hitSeries.push({ key:'vol', label:'Recent IV', color:volColor, valByIdx, fmt: v => v.toFixed(2)+'%' });
     }
+    buildHistHitzones('g-hc-iv-hit', 'g-hc-iv-hover', L, volIdxs, hitSeries);
     const legVal = document.getElementById('leg-hc-vol');
     if (legVal) legVal.textContent = volVals[volVals.length-1].toFixed(2) + '%';
   }
 
-  function drawPlainSeries(idxs, vals, rng, color, dashed, key, label, legId) {
-    if (!rng || !idxs.length) return;
-    const valByIdx = {}; idxs.forEach((i,k)=>valByIdx[i]=vals[k]);
-    if (histSeriesVisible[key]) {
-      drawHistSeries(lineG, { toX: L.toX, toY: v => L.toY(normalize(v, rng)) }, valByIdx, idxs, color, '1.75', dashed);
-      const pts = idxs.map(i => [L.toX(gcfHistory[i].t), L.toY(normalize(valByIdx[i], rng))]);
-      endpointDots(pts, color);
+  // ── Intraday Calls/Puts panel ──
+  const intraAll = [...intraCallVals, ...intraPutVals];
+  const intraL = intraAll.length ? panelLayout(intraAll, vals => Math.max(...vals) * 0.05) : null;
+  document.getElementById('hist-panel-intra').style.display = intraL ? '' : 'none';
+  const intraAllIdxs = [...new Set([...intraCallIdxs, ...intraPutIdxs])].sort((a,b)=>a-b);
+  if (intraL) {
+    const L = intraL;
+    drawHistGrid('g-hc-intra-grid', L, fmtCompactNum);
+    const lineG = clearG('g-hc-intra-line'), ptsG = clearG('g-hc-intra-points');
+    const hitSeries = [];
+    function drawIntraOrOi(idxs, vals, color, dashed, key, label, legId) {
+      const legVal = document.getElementById(legId);
+      if (legVal && vals.length) legVal.textContent = fmtCompactNum(vals[vals.length-1]);
+      if (!idxs.length) return;
+      const valByIdx = {}; idxs.forEach((i,k)=>valByIdx[i]=vals[k]);
+      drawHistSeries(lineG, L, valByIdx, idxs, color, '1.75', dashed);
+      const pts = idxs.map(i => [L.toX(gcfHistory[i].t), L.toY(valByIdx[i])]);
+      endpointDots(ptsG, pts, color);
       hitSeries.push({ key, label, color, valByIdx, fmt: fmtCompactNum });
     }
-    const legVal = document.getElementById(legId);
-    if (legVal) legVal.textContent = fmtCompactNum(vals[vals.length-1]);
+    drawIntraOrOi(intraCallIdxs, intraCallVals, intraCallColor, false, 'intraCall', 'Intraday Calls', 'leg-hc-intraCall');
+    drawIntraOrOi(intraPutIdxs,  intraPutVals,  intraPutColor,  false, 'intraPut',  'Intraday Puts',  'leg-hc-intraPut');
+    buildHistHitzones('g-hc-intra-hit', 'g-hc-intra-hover', L, intraAllIdxs, hitSeries);
   }
 
-  drawPlainSeries(intraCallIdxs, intraCallVals, intraRng, intraCallColor, false, 'intraCall', 'Intraday Calls', 'leg-hc-intraCall');
-  drawPlainSeries(intraPutIdxs,  intraPutVals,  intraRng, intraPutColor,  false, 'intraPut',  'Intraday Puts',  'leg-hc-intraPut');
-  drawPlainSeries(oiCallIdxs,    oiCallVals,    oiRng,    oiCallColor,    true,  'oiCall',    'OI Calls',       'leg-hc-oiCall');
-  drawPlainSeries(oiPutIdxs,     oiPutVals,     oiRng,    oiPutColor,     true,  'oiPut',     'OI Puts',        'leg-hc-oiPut');
+  // ── OI Calls/Puts panel ──
+  const oiAll = [...oiCallVals, ...oiPutVals];
+  const oiL = oiAll.length ? panelLayout(oiAll, vals => Math.max(...vals) * 0.05) : null;
+  document.getElementById('hist-panel-oi').style.display = oiL ? '' : 'none';
+  const oiAllIdxs = [...new Set([...oiCallIdxs, ...oiPutIdxs])].sort((a,b)=>a-b);
+  if (oiL) {
+    const L = oiL;
+    drawHistGrid('g-hc-oi-grid', L, fmtCompactNum);
+    const lineG = clearG('g-hc-oi-line'), ptsG = clearG('g-hc-oi-points');
+    const hitSeries = [];
+    function drawOi(idxs, vals, color, key, label, legId) {
+      const legVal = document.getElementById(legId);
+      if (legVal && vals.length) legVal.textContent = fmtCompactNum(vals[vals.length-1]);
+      if (!idxs.length) return;
+      const valByIdx = {}; idxs.forEach((i,k)=>valByIdx[i]=vals[k]);
+      drawHistSeries(lineG, L, valByIdx, idxs, color, '1.75', true);
+      const pts = idxs.map(i => [L.toX(gcfHistory[i].t), L.toY(valByIdx[i])]);
+      endpointDots(ptsG, pts, color);
+      hitSeries.push({ key, label, color, valByIdx, fmt: fmtCompactNum });
+    }
+    drawOi(oiCallIdxs, oiCallVals, oiCallColor, 'oiCall', 'OI Calls', 'leg-hc-oiCall');
+    drawOi(oiPutIdxs,  oiPutVals,  oiPutColor,  'oiPut',  'OI Puts',  'leg-hc-oiPut');
+    buildHistHitzones('g-hc-oi-hit', 'g-hc-oi-hover', L, oiAllIdxs, hitSeries);
+  }
+
+  // X-axis sits beneath the last panel in the stack.
+  const xAxisL = { tStart, tEnd };
+  drawHistXAxis('hist-combined-xaxis', xAxisL);
 
   const allIdxs = [...new Set([...volIdxs, ...intraCallIdxs, ...intraPutIdxs, ...oiCallIdxs, ...oiPutIdxs])].sort((a,b)=>a-b);
-  buildHistHitzones('g-hc-hit', 'g-hc-hover', L, allIdxs, hitSeries);
-
-  drawHistXAxis('hist-combined-xaxis', L);
-
   const parts = [`${allIdxs.length} pts`];
   if (volVals.length) parts.push(`IV ${volVals[volVals.length-1].toFixed(2)}%`);
   if (intraCallVals.length && intraPutVals.length) parts.push(`P/C intraday ${(intraPutVals[intraPutVals.length-1]/intraCallVals[intraCallVals.length-1]).toFixed(2)}`);
@@ -5771,7 +5876,7 @@ function histCutoffMinutes() {
 // hasData guard in each renderer exists to smooth over transient live-feed
 // gaps, not to survive a deliberate jump to a new point in time.
 function resetHistStickyFlags() {
-  const shell = document.getElementById('hist-chart-combined');
+  const shell = document.getElementById('hist-sm-panels');
   if (shell) delete shell.dataset.hasData;
 }
 
