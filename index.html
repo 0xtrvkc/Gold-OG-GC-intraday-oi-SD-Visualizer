@@ -3529,8 +3529,15 @@ function queryBigSnaps(db, table, startIso, endIso) {
   return Array.from(byT.values()).sort((a, b) => a.t - b.t);
 }
 
-async function loadBigChartSnapshots() {
-  if (bigSnapsLoading || bigSnapsLoaded) return;
+async function loadBigChartSnapshots(force) {
+  // force=true bypasses the "already loaded" guard so a stale in-memory
+  // cache (fetched once, e.g. hours ago) can be refreshed with whatever
+  // new snapshots the server has picked up since then. Without this, once
+  // bigSnapsLoaded flips true it never flips back, so At-Time backfill
+  // keeps matching against the same old snapshot set for the rest of the
+  // session even as the picked time moves further past it.
+  if (bigSnapsLoading) return;
+  if (bigSnapsLoaded && !force) return;
   if (typeof initSqlJs === 'undefined') { setTimeout(loadBigChartSnapshots, 500); return; }
   bigSnapsLoading = true;
   updateChartScrubUI();
@@ -4903,7 +4910,7 @@ function trUpdateMagicSelector() {
   sel.selectedIndex = open.length - 1; // default to most recently opened
 }
 
-function recordTrade(type) {
+async function recordTrade(type) {
   // If "At Time" is set, resolve the closest historical snapshot first —
   // everything below then reads from that snapshot instead of live state.
   // See the AT-TIME BACKFILL block above for how matching/tolerance work.
@@ -4911,12 +4918,19 @@ function recordTrade(type) {
   let matchedIntra = null, matchedOi = null, matchDiffMs = 0;
 
   if (usingPastTime) {
-    if (!bigSnapsLoaded) {
-      alert(bigSnapsLoading
-        ? 'Still loading historical snapshots — try again in a moment.'
-        : "Historical snapshots aren't available right now, so a past time can't be matched. Clear At Time to record live, or try again shortly.");
+    if (!bigSnapsLoaded && !bigSnapsLoading) loadBigChartSnapshots();
+    if (bigSnapsLoading) {
+      alert('Still loading historical snapshots — try again in a moment.');
       return;
     }
+    if (!bigSnapsLoaded) {
+      alert("Historical snapshots aren't available right now, so a past time can't be matched. Clear At Time to record live, or try again shortly.");
+      return;
+    }
+    // The snapshot list was fetched once and cached — refresh it now so a
+    // picked time from just a few minutes ago (very likely already on the
+    // server) isn't matched against a stale, hours-old snapshot set.
+    await loadBigChartSnapshots(true);
     const { tStart } = dayWindow();
     const targetT = tStart + trTimeMinutes * 60000;
     matchedIntra = findNearestSnap(bigIntradaySnaps, targetT);
