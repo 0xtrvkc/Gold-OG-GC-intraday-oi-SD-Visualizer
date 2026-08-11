@@ -5230,7 +5230,15 @@ function toggleTradeStrikes(i) {
 // blank cells for it — sparse, not guessed/interpolated, same as before.
 function sanitizeCell(v) {
   if (v === null || v === undefined) return '';
-  return String(v).replace(/=/g, '-');
+  let s = String(v).replace(/=/g, '-');
+  // Zone values start with '+' or the unicode minus '−' (e.g. "+1σ → +2σ").
+  // Google Sheets treats any pasted cell starting with =, +, -, or @ as the
+  // start of a formula, so "+1σ..." gets swallowed into a broken formula
+  // (that's the stray '=' you see when you inspect the pasted cell).
+  // A leading straight apostrophe forces Sheets/Excel to treat it as plain
+  // text instead — the apostrophe itself isn't shown in the cell.
+  if (/^[=+\-−@]/.test(s)) s = "'" + s;
+  return s;
 }
 
 // Most common gap between consecutive sorted strikes, pooled across every
