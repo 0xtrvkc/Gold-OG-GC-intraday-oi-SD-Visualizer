@@ -1,53 +1,67 @@
-# SD Visualizer · GC Intraday 
-
 https://0xtrvkc.github.io/Gold-OG-GC-intraday-oi-SD-Visualizer/
-A single-file, client-side dashboard for watching Gold Futures (GC) options flow through the trading day — intraday volume and open interest by strike, plotted against a normal-distribution ±3σ price curve, with session history, a DTE low-IV ladder, and a manual trade recorder.
+# SD Visualizer · GC Intraday
 
-No build step, no backend required. It's one `index.html` — open it in a browser or serve it as a static page (e.g. GitHub Pages).
+A single-file, no-backend dashboard for visualizing Gold futures (GC) options
+activity against a normal distribution. It plots intraday volume and open
+interest by strike, overlays ±3σ zones, and tracks how price behaves relative
+to those zones through the trading day.
 
-## What it does
+Everything lives in one `index.html` — no build step, no server. Open it in
+a browser and it pulls live data straight from GitHub-hosted sources.
 
-- **σ curve + strike bars** — plots the expected-move normal distribution (μ = gold futures price, σ = IV/16 × mean) alongside intraday volume and open-interest bars at each strike, so you can see where flow is clustering relative to the statistical zones.
-- **Price / IV smile controls** — mean and σ can run in auto mode (live futures price, IV-derived expected distance) or be overridden manually; a "Price — Vol Zone" slider lets you probe implied vol at any price point along the smile.
-- **Playback scrubber** — drag through the trading day to replay how the intraday/OI bars evolved, or jump back to live.
-- **Session History charts** — time-series of futures price, IV, and call/put totals (intraday + OI) for the current session, restored from `localStorage` and backfilled from a public snapshot DB so history survives a refresh.
-- **DTE Low-IV Ladder** — a small table showing the lowest available IV at each 0.1 DTE rung (1.0 → 0.0) for the day, matched from actual snapshots rather than interpolated.
-- **Trade Recorder** — a manual log for marking trade Opens/Exits. See below.
-- **Macro news box** — pulls short-form macro headlines relevant to gold from a companion JSON feed.
-- Light/dark theme toggle, zoom/pan on the chart, and a PWA manifest so it can be added to a phone home screen.
+## Features
 
-## Trade Recorder
-
-A lightweight, in-memory trade log built for fast entry during the session:
-
-- **Save Open / Save Exit** are the only two buttons needed to log a row — no manual fields. Future price and timestamp are captured automatically from whatever the page is showing at that instant.
-- Every row also snapshots the **entire options chain** at save time (intraday + OI call/put at every strike), not just totals — expandable per row via a "N strikes" toggle without cluttering the main table.
-- **Open/Exit pairing** is automatic via a monotonic "Magic #"; if more than one position is open at once, a "Closing" dropdown appears so you can pick which one an Exit belongs to.
-- **Editable after the fact**: Future Price (in case the auto-captured tick was stale) and a Win/Lose Result tag (Exit rows only) can both be corrected/filled in later, right in the table.
-- **Strategy** (Mean Reverse / Recovery / Follow Squeeze / After Squeeze) and **Martingale step** (#1–#4) tags on Open rows, for classifying entries as you go.
-- **Copy for Sheets** exports the whole log as tab-separated values, ready to paste into Google Sheets/Excel. Per-strike columns are built from the *union* of every strike seen across the session (the visible strike range drifts through the day), sorted and sparse-filled — rows that never saw a given strike just get a blank cell instead of a guessed value. Every exported cell is sanitized to strip `=` so nothing gets misread as a spreadsheet formula.
-- Everything is in-memory only and clears on page refresh — meant to be copied out before you reload.
+- **Normal distribution chart** — empirical rule (68–95–99.7) bands, ±3σ
+  zones, minor/major gridlines, centered on the computed mean.
+- **Intraday volume & OI overlay** — calls/puts by strike, toggle between
+  Both / Intraday only / OI only.
+- **Sigma gauge** — shows where the current future price sits relative to
+  the distribution (e.g. "+1σ → +2σ, 40% from +1σ").
+- **Vol Zone** — an optional ±σ band computed from a price/vol you enter
+  yourself, independent of the live future price.
+- **Auto / manual σ mode** — auto-computed standard deviation from live
+  data, or override it manually.
+- **Big Chart Playback** — scrub or auto-play back through the day's
+  intraday/OI snapshots instead of only viewing the live state.
+- **History charts** — time-series views of key metrics through the day,
+  with the same scrub/playback controls.
+- **DTE ladder** — snapshot matching across a fixed set of days-to-expiry
+  rungs (1.0 → 0.0 in 0.1 steps), so you can compare the same underlying
+  setup at different points in its life.
+- **Trade Recorder** *(currently hidden — see [Known issues](#known-issues))*
+  — logs Open/Exit trades with the full option-chain snapshot at save time,
+  including an "At Time" backfill mode that matches a picked clock time to
+  the closest historical snapshot. Exports as tab-separated data via
+  "Copy for Sheets" for pasting straight into Google Sheets.
+- **Light/dark theme toggle.**
 
 ## Data sources
 
-All data is fetched client-side from public raw files — no API keys required for normal use:
+| Source | What | Where |
+|---|---|---|
+| `pageth/Vol2VolData` | Live `IntradayData.txt` / `OIData.txt` — current snapshot, fetched directly | `raw.githubusercontent.com` |
+| `pageth/Vol2VolData` commit history | Historical OI snapshots (via commit log + raw blob fetch per commit) | `api.github.com` |
+| `0xtrvkc/itd-oi-db` | `data/vol2vol.db` — a SQLite log of intraday + OI snapshots polled every 5 min, used for Big Chart Playback, History charts, DTE ladder, and Trade Recorder At-Time backfill | `raw.githubusercontent.com`, parsed client-side with [sql.js](https://github.com/sql-js/sql.js) |
 
-| Source | Purpose |
-|---|---|
-| `pageth/Vol2VolData` (`IntradayData.txt`, `OIData.txt`) | Live intraday volume + open interest by strike |
-| `0xtrvkc/itd-oi-db` (`vol2vol.db`, read via [sql.js](https://sql.js.org/)) | Public snapshot history — backfills Session History charts and the DTE ladder across refreshes/devices |
-| `0xtrvkc/BTC-Daily-Short-Call-Premium-Income-Checklist` (`macro.json`) | Macro news headlines |
-| Yahoo/GC=F (via the app's gold price fetch) | Live gold futures price for the Mean (μ) auto value |
+An optional GitHub personal access token (read-only, no scopes needed) can
+be entered in the UI to raise the `api.github.com` rate limit from 60/hr to
+5,000/hr for commit-history lookups. It's stored only in the browser's
+`localStorage` and is never sent anywhere except `api.github.com`.
 
-An optional **GitHub personal access token** (read-only, no scopes needed) can be entered in the header — it raises GitHub's unauthenticated API rate limit (60/hr → 5,000/hr) for the day's first-snapshot IV lookup. It's stored only in the browser's `localStorage` and sent only to `api.github.com`.
+## Known issues
 
-If a local `api.py` server is running on `localhost:5000`, the app will also opportunistically backfill session history from it (dev-only; silently skipped when unavailable, e.g. on GitHub Pages).
+- **Trade Recorder is currently hidden** (`#trade-recorder-section` is
+  `display:none` in `index.html`). The upstream `itd-oi-db` intraday
+  snapshot feed silently stopped updating for a stretch, which broke
+  At-Time backfill matching. The section's markup/JS is untouched — remove
+  the `display:none` once the upstream feed is confirmed healthy again.
 
-## Running it
+## Usage
 
-Just open `index.html` in a browser. For the sql.js/History backfill and service-worker/manifest features to behave correctly, serving it over `http(s)` (e.g. `python3 -m http.server`, or GitHub Pages) is recommended over `file://`.
+Just open `index.html` in a browser — no install, no dependencies to run
+locally. All computation happens client-side.
 
-## Notes
+## Related repo
 
-- Everything — chart, history, DTE ladder, trade recorder — runs entirely in the browser. There is no server-side component required for normal operation.
-- Session History and the Trade Recorder are two separate stores: history persists (localStorage + public DB backfill), the trade log is intentionally ephemeral (clears on refresh) since it's meant to be copied out per session.
+The snapshot database this dashboard reads (`data/vol2vol.db`) is produced
+by a separate scheduled fetcher: [0xtrvkc/itd-oi-db](https://github.com/0xtrvkc/itd-oi-db).
