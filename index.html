@@ -6777,6 +6777,16 @@ loadDteLadder();      // small DTE Low-IV ladder table, above Session History
 // no blank/flash in between.
 setInterval(loadHistoryFromDb, SNAPLOG_POLL_MS);
 setInterval(loadDteLadder, SNAPLOG_POLL_MS); // same cadence as the upstream collector's rewrite
+// bigIntradaySnaps/bigOiSnaps (per-strike hover sparkline) are only ever
+// populated by the FIRST hover (loadBigChartSnapshots() with no `force`),
+// then bigSnapsLoaded latches true and every later hover just replays that
+// same stale snapshot set — the "as of" time on the hover chart stops
+// advancing until a full page reload re-triggers the initial load. Refresh
+// it on the same cadence as the collector's actual rewrite (same reasoning
+// as above): no point polling faster than the source data can change.
+setInterval(() => {
+  if (bigSnapsLoaded && !bigSnapsLoading && !bigPlaying) loadBigChartSnapshots(true);
+}, SNAPLOG_POLL_MS);
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
