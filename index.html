@@ -1905,7 +1905,12 @@ svg.hist-svg {
        straight into Google Sheets — see copyTradeLog() for how the
        per-strike columns are reconciled across a strike range that drifts
        through the day. See recordTrade(). -->
-  <div class="hist-section" id="trade-recorder-section">
+  <!-- HIDDEN FOR NOW — At-Time backfill relies on the upstream itd-oi-db
+       intraday snapshot feed, which has been silently broken (see
+       [intraday] fetch failures in that repo's Action logs). Section is
+       just display:none'd, not removed — flip this back to remove
+       style="display:none;" once the upstream feed is fixed. -->
+  <div class="hist-section" id="trade-recorder-section" style="display:none;">
     <div class="hist-section-title">Trade Recorder <span class="dte-ladder-meta" id="tr-meta">0 entries</span>
       <button type="button" class="tr-help-btn" onclick="openTrHelp()" title="How to use the Trade Recorder">? How to Use</button>
     </div>
