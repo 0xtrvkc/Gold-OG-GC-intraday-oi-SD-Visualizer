@@ -175,6 +175,7 @@ h1 {
 .pulse.stale { background: var(--fg3); animation: none; }
 
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+.freshness-blink { animation: blink 0.9s ease-in-out infinite; }
 
 .btn {
   font-family: var(--mono);
@@ -1649,12 +1650,8 @@ svg.hist-svg {
 </a>
       </div>
       <div id="mean-fetch-status" style="font-size:10px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.04em;line-height:1.4;">⏳ Fetching GC=F…</div>
-      <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
-        <input type="password" id="inp-github-token" placeholder="GitHub token (optional)"
-          title="Optional personal access token (read-only, no scopes needed) — raises GitHub's API limit from 60/hr to 5,000/hr for the 0.99 DTE commit lookup. Stored only in this browser's localStorage; sent only to api.github.com, never to raw.githubusercontent.com or anywhere else."
-          style="font-size:9px;font-family:var(--mono);padding:2px 5px;width:150px;border:1px solid var(--line2);background:var(--bg0);color:var(--fg0);border-radius:2px;">
-        <button class="toggle-btn toggle-btn-sm" onclick="handleSaveGithubToken()" style="padding:1px 6px;">Save</button>
-      </div>
+      <div id="data-freshness-badge" title="Whether the underlying data source is actually publishing new data — not just whether our fetch succeeded" style="font-size:12px;font-family:var(--mono);font-weight:800;letter-spacing:0.06em;padding:4px 10px;border:1.5px solid var(--line2);border-radius:3px;margin-top:3px;text-align:center;white-space:nowrap;color:var(--fg3);background:transparent;">◌ WAITING FOR DATA…</div>
+      <div id="data-freshness-sub" style="font-size:9px;font-family:var(--mono);color:var(--fg3);letter-spacing:0.03em;text-align:right;margin-top:2px;max-width:220px;"></div>
     </div>
   </header>
 
@@ -2148,6 +2145,79 @@ const REFRESH_BACKOFF_MAX = 8;
 let countdownSec   = 0;
 let intradayUpdatedAt = null;
 let oiUpdatedAt       = null;
+
+/* ================================================================
+  DATA FRESHNESS — tracks whether the SOURCE FILES themselves are
+  actually changing, not just whether our fetch succeeded. A 200 OK
+  (or a cheap 304) on an unchanged file looks identical to a healthy
+  fetch, but if the upstream collector has stalled, the content is
+  frozen even while "Updated HH:MM:SS" keeps ticking forward every
+  cycle — that gap is exactly what makes stale data look live. This
+  compares each fetch's raw text against the previous one and only
+  advances lastIntradayChangeAt/lastOiChangeAt when the content
+  actually differs.
+================================================================ */
+let lastIntradayRawText   = null;
+let lastOiRawText         = null;
+let lastIntradayChangeAt  = null;
+let lastOiChangeAt        = null;
+let fetchIsFailing        = false;
+
+function freshFmtAge(ms) {
+  if (ms < 60000) return Math.round(ms/1000) + 's';
+  if (ms < 3600000) return Math.round(ms/60000) + 'm';
+  return (ms/3600000).toFixed(1) + 'h';
+}
+
+// Badge states, worst to best:
+//   FETCH FAILING  — our own request is erroring (network/CORS/HTTP)
+//   DATA STALE     — fetches are succeeding, but the file's CONTENT hasn't
+//                     changed in a long time — the exact "looked live, was
+//                     actually frozen" failure mode this badge exists for.
+//   DATA SLOW      — content is still moving, just slower than expected.
+//   LIVE           — content changed within the expected window.
+// Thresholds scale off the user's chosen auto-refresh interval, since a
+// 10s-interval user and a 5min-interval user have very different notions
+// of "too long since the last real update."
+function updateDataFreshnessBadge() {
+  const el  = document.getElementById('data-freshness-badge');
+  const sub = document.getElementById('data-freshness-sub');
+  if (!el) return;
+  const now = Date.now();
+  const intervalSel = document.getElementById('sel-interval');
+  const intervalMs = intervalSel ? (parseInt(intervalSel.value) || 30000) : 30000;
+  const warnMs  = Math.max(90000,  intervalMs * 4);
+  const staleMs = Math.max(180000, intervalMs * 8);
+
+  function paint(text, color, blink, subText) {
+    el.textContent = text;
+    el.style.color = color;
+    el.style.borderColor = color;
+    el.style.background = blink ? (isDark ? 'rgba(224,85,85,0.12)' : 'rgba(180,51,51,0.08)') : 'transparent';
+    el.classList.toggle('freshness-blink', !!blink);
+    if (sub) sub.textContent = subText || '';
+  }
+
+  if (fetchIsFailing) {
+    paint('⚠ FETCH FAILING', 'var(--danger)', true,
+      lastIntradayChangeAt ? 'last good data ' + freshFmtAge(now - lastIntradayChangeAt.getTime()) + ' ago' : 'no data received yet');
+    return;
+  }
+  if (!lastIntradayChangeAt) {
+    paint('◌ WAITING FOR DATA…', 'var(--fg3)', false, '');
+    return;
+  }
+
+  const age = now - lastIntradayChangeAt.getTime();
+  if (age > staleMs) {
+    paint('⚠ DATA STALE', 'var(--danger)', true,
+      'unchanged for ' + freshFmtAge(age) + ' — source may not be updating');
+  } else if (age > warnMs) {
+    paint('◐ DATA SLOW', 'var(--oi-put)', false, 'last changed ' + freshFmtAge(age) + ' ago');
+  } else {
+    paint('● LIVE', isDark ? '#48a868' : '#1a7a3a', false, 'updated ' + freshFmtAge(age) + ' ago');
+  }
+}
 
 // G-Arrow manual IV override (decimal, e.g. 0.123). null = auto (oiIvOpen-derived)
 let garrowIvOverride = null;
@@ -3924,6 +3994,10 @@ async function fetchData() {
     ]);
     if (!r1.ok) throw new Error('Intraday fetch failed: '+r1.status);
     const text=await r1.text();
+    if (lastIntradayRawText === null || text !== lastIntradayRawText) {
+      lastIntradayChangeAt = new Date();
+      lastIntradayRawText = text;
+    }
     liveData=parseIntraday(text);
     intradayUpdatedAt = new Date();
     saveDataCache(LIVE_DATA_CACHE_KEY, liveData);
@@ -3935,6 +4009,10 @@ async function fetchData() {
 
     if (r2.ok) {
       const oit=await r2.text();
+      if (lastOiRawText === null || oit !== lastOiRawText) {
+        lastOiChangeAt = new Date();
+        lastOiRawText = oit;
+      }
       oiData=parseIntraday(oit);
       oiUpdatedAt = new Date();
       saveDataCache(OI_DATA_CACHE_KEY, oiData);
@@ -3996,6 +4074,8 @@ async function fetchData() {
     // Record one session-history point per successful fetch tick
     recordHistoryPoint();
     refreshBackoffMultiplier = 1; // success — drop back to the user's chosen interval
+    fetchIsFailing = false;
+    updateDataFreshnessBadge();
   } catch(e) {
     err.style.display='block';
     err.textContent='⚠ Error fetching data: '+e.message;
@@ -4005,6 +4085,8 @@ async function fetchData() {
       alertEl.textContent='⚠ Fetch failed: '+e.message;
       alertEl.style.color='var(--danger)';
     }
+    fetchIsFailing = true;
+    updateDataFreshnessBadge();
     // Adaptive backoff: a 429 (or any repeated failure) means we're already
     // asking too often for what the upstream is currently willing to give —
     // continuing to retry at the same cadence just makes that worse. Double
@@ -6892,6 +6974,8 @@ setInterval(loadDteLadder, SNAPLOG_POLL_MS); // same cadence as the upstream col
 setInterval(() => {
   if (bigSnapsLoaded && !bigSnapsLoading && !bigPlaying) loadBigChartSnapshots(true);
 }, SNAPLOG_POLL_MS);
+updateDataFreshnessBadge();
+setInterval(updateDataFreshnessBadge, 2000); // keeps the "Xs/Xm ago" readout advancing between fetches
 fetchGoldPrice();   // loads cache instantly, then fetches live in background
 fetchData();
 fetchMacro();
